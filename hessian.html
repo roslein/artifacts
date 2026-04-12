@@ -1,117 +1,155 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8">
-  <title>Hessian 곡면 시각화 (Pure HTML)</title>
-  <style>
-    body {
-      margin: 0;
-      font-family: system-ui, sans-serif;
-      background: #f5f5f5;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-    }
-
-    canvas {
-      background: #fff;
-      border: 1px solid #ccc;
-      margin-top: 10px;
-    }
-
-    .controls {
-      display: flex;
-      gap: 12px;
-      margin: 10px;
-    }
-
-    .controls label {
-      font-size: 13px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-    }
-
-    .hud {
-      font-family: monospace;
-      margin-bottom: 10px;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>헤시안(Hessian) 곡면 시각화</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #121212; color: #e0e0e0; font-family: 'Google Sans', sans-serif; }
+        #hud { position: absolute; top: 15px; left: 15px; background: rgba(30, 30, 30, 0.85); padding: 15px 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); pointer-events: none; }
+        h3 { margin: 0 0 10px 0; font-size: 16px; font-weight: 500; color: #ffffff; }
+        .stat-row { margin-bottom: 5px; font-size: 14px; }
+        .stat-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #aaaaaa; display: block; margin-bottom: 2px; }
+        .stat-value { font-weight: bold; font-family: monospace; font-size: 14px; }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.7.9/dat.gui.min.js"></script>
 </head>
-
 <body>
+    <div id="hud">
+        <h3>헤시안(Hessian) 곡면 시각화</h3>
+        <div class="stat-row">
+            <span class="stat-label">행렬식 (Det)</span>
+            <span id="det-val" class="stat-value">-1.00</span>
+        </div>
+        <div class="stat-row">
+            <span class="stat-label">상태</span>
+            <span id="status-val" class="stat-value" style="color: #ff6b6b;">판정: 말안장/엣지 (Saddle/Edge - 불안정한 특징점)</span>
+        </div>
+    </div>
 
-<h3>Hessian 곡면 시각화</h3>
+    <div id="canvas-container"></div>
 
-<canvas id="canvas" width="420" height="420"></canvas>
+    <script>
+        // 1. 상태 (State) 정의
+        const state = {
+            lxx: 1.0,
+            lyy: -1.0,
+            lxy: 0.0
+        };
 
-<div class="controls">
-  <label>Lxx
-    <input type="range" min="-3" max="3" step="0.1" value="1" id="lxx">
-  </label>
-  <label>Lyy
-    <input type="range" min="-3" max="3" step="0.1" value="-1" id="lyy">
-  </label>
-  <label>Lxy
-    <input type="range" min="-3" max="3" step="0.1" value="0" id="lxy">
-  </label>
-</div>
+        // 2. Three.js 씬 설정
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(25, 25, 25);
+        camera.lookAt(0, 0, 0);
 
-<div class="hud" id="hud"></div>
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        document.getElementById('canvas-container').appendChild(renderer.domElement);
 
-<script>
-const canvas = document.getElementById("canvas");
-const ctx = canvas.getContext("2d");
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
 
-const sliders = {
-  lxx: document.getElementById("lxx"),
-  lyy: document.getElementById("lyy"),
-  lxy: document.getElementById("lxy")
-};
+        // 3. 곡면 (Surface) 지오메트리 생성
+        const segments = 60;
+        const size = 20;
+        const geometry = new THREE.PlaneGeometry(size, size, segments, segments);
+        geometry.rotateX(-Math.PI / 2); // XY 평면으로 눕힘
 
-function draw() {
-  const Lxx = parseFloat(sliders.lxx.value);
-  const Lyy = parseFloat(sliders.lyy.value);
-  const Lxy = parseFloat(sliders.lxy.value);
+        const material = new THREE.MeshPhongMaterial({
+            color: 0x4285f4,
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.8,
+            shininess: 60
+        });
 
-  const det = Lxx * Lyy - Lxy * Lxy;
+        const wireMaterial = new THREE.MeshBasicMaterial({
+            color: 0xffffff,
+            wireframe: true,
+            transparent: true,
+            opacity: 0.15
+        });
 
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.translate(canvas.width / 2, canvas.height / 2);
+        const mesh = new THREE.Mesh(geometry, material);
+        const wireframe = new THREE.Mesh(geometry, wireMaterial);
+        scene.add(mesh);
+        scene.add(wireframe);
 
-  const scale = 0.015;
+        scene.add(new THREE.AxesHelper(12));
 
-  // Draw surface as height map (top-down shading)
-  for (let x = -200; x < 200; x += 4) {
-    for (let y = -200; y < 200; y += 4) {
-      const z =
-        0.5 * Lxx * x * x +
-        Lxy * x * y +
-        0.5 * Lyy * y * y;
+        // 조명 설정
+        scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(10, 20, 10);
+        scene.add(dirLight);
 
-      const intensity = Math.max(-255, Math.min(255, z * scale));
-      const c = intensity > 0 ? `rgb(255,${255-intensity},${255-intensity})`
-                              : `rgb(${255+intensity},${255+intensity},255)`;
+        // 4. UI 및 로직 업데이트 함수
+        function updateSurface() {
+            const positions = geometry.attributes.position.array;
+            
+            // 행렬식 계산
+            const det = state.lxx * state.lyy - Math.pow(state.lxy, 2);
+            
+            // HUD 업데이트
+            document.getElementById('det-val').innerText = det.toFixed(2);
+            const statusEl = document.getElementById('status-val');
+            
+            if (det > 0) {
+                statusEl.innerText = "판정: 밥그릇/웅덩이 (Blob - 좋은 특징점)";
+                statusEl.style.color = "#34a853"; // Green
+                material.color.setHex(0x34a853);
+            } else if (det < 0) {
+                statusEl.innerText = "판정: 말안장/엣지 (Saddle/Edge - 불안정한 특징점)";
+                statusEl.style.color = "#ea4335"; // Red
+                material.color.setHex(0xea4335);
+            } else {
+                statusEl.innerText = "판정: 평면/직선 (Flat)";
+                statusEl.style.color = "#fbbc04"; // Yellow
+                material.color.setHex(0x4285f4); // Blue base
+            }
 
-      ctx.fillStyle = c;
-      ctx.fillRect(x, y, 4, 4);
-    }
-  }
+            // 꼭짓점 Z축 (여기서는 Y) 업데이트: Z = 0.5 * Lxx * x^2 + Lxy * x * y + 0.5 * Lyy * y^2
+            for (let i = 0; i < positions.length; i += 3) {
+                const x = positions[i];
+                const z = positions[i + 2];
+                const y = 0.5 * state.lxx * Math.pow(x, 2) + 
+                          state.lxy * x * z + 
+                          0.5 * state.lyy * Math.pow(z, 2);
+                
+                positions[i + 1] = y * 0.1; // 시각적 스케일링
+            }
 
-  ctx.setTransform(1,0,0,1,0,0);
+            geometry.attributes.position.needsUpdate = true;
+            geometry.computeVertexNormals();
+        }
 
-  let label;
-  if (det > 0) label = "Blob (안정, 특징점)";
-  else if (det < 0) label = "Saddle / Edge (불안정)";
-  else label = "Flat / Line";
+        // 5. dat.GUI 설정
+        const gui = new dat.GUI();
+        gui.add(state, 'lxx', -5, 5).step(0.1).name('X방향 곡률 (Lxx)').onChange(updateSurface);
+        gui.add(state, 'lyy', -5, 5).step(0.1).name('Y방향 곡률 (Lyy)').onChange(updateSurface);
+        gui.add(state, 'lxy', -3, 3).step(0.1).name('대각선 뒤틀림 (Lxy)').onChange(updateSurface);
 
-  document.getElementById("hud").innerText =
-    `Det = ${det.toFixed(2)} → ${label}`;
-}
+        // 초기화 1회 실행
+        updateSurface();
 
-Object.values(sliders).forEach(s => s.addEventListener("input", draw));
-draw();
-</script>
+        // 6. 애니메이션 루프
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        animate();
 
+        // 창 크기 조절 대응
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
 </body>
 </html>
