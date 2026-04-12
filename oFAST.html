@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>oFAST Intensity Centroid</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #12121a; color: #eee; font-family: sans-serif; padding: 16px; }
+
+  h2 { font-size: 16px; font-weight: 500; color: #ddd; margin-bottom: 12px; }
+
+  #hud { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  .hud-pill { background: #1e1e2a; border: 0.5px solid #333; border-radius: 8px; padding: 6px 14px; }
+  .hud-label { font-size: 11px; color: #777; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 3px; }
+  .hud-val { font-size: 14px; font-weight: 600; font-family: monospace; color: #ccc; }
+  .hud-val.angle { color: #f0c060; }
+
+  #status { font-size: 12px; padding: 6px 12px; border-radius: 8px; margin-bottom: 14px;
+            background: #1a1e2e; border: 0.5px solid #334; color: #8aabdd; }
+
+  #main { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+
+  #canvas-wrap { position: relative; flex: 0 0 auto; }
+  canvas { display: block; border-radius: 10px; border: 0.5px solid #333; background: #0d0d14; cursor: crosshair; }
+  #drag-hint { position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+               background: #2a2a3a; border: 0.5px solid #444; border-radius: 6px;
+               font-size: 11px; color: #999; padding: 3px 10px; pointer-events: none; }
+
+  #info-panel { flex: 1; min-width: 220px; }
+
+  .section-title { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.8px; margin: 12px 0 8px; }
+
+  .formula-box { background: #1a1a26; border: 0.5px solid #333; border-radius: 8px;
+                 padding: 10px 14px; font-size: 12px; color: #aaa; line-height: 2; }
+  .formula-box .f { color: #88aaff; font-family: monospace; }
+  .formula-box .c { color: #f0c060; font-family: monospace; }
+
+  .legend { margin-top: 12px; display: flex; flex-direction: column; gap: 7px; }
+  .legend-item { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #aaa; }
+  .legend-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+  .legend-line { width: 24px; height: 3px; border-radius: 2px; flex-shrink: 0; }
+
+  .ctrl-row { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+  .ctrl-label { font-size: 12px; color: #aaa; min-width: 130px; }
+  .ctrl-val { font-size: 12px; font-weight: 600; font-family: monospace; color: #ddd; min-width: 36px; text-align: right; }
+  input[type=range] { flex: 1; accent-color: #5577ee; }
+
+  .btn { background: #2a2a3a; border: 0.5px solid #444; color: #ccc; padding: 6px 14px;
+         border-radius: 8px; font-size: 12px; cursor: pointer; margin-top: 10px; width: 100%; }
+  .btn:hover { background: #333348; }
+</style>
+</head>
+<body>
+
+<h2>oFAST — Intensity Centroid (방향 추정)</h2>
+
+<div id="hud">
+  <div class="hud-pill"><div class="hud-label">m₀₀ (Mass)</div><div class="hud-val" id="h-m00">—</div></div>
+  <div class="hud-pill"><div class="hud-label">m₁₀ (X-Mom)</div><div class="hud-val" id="h-m10">—</div></div>
+  <div class="hud-pill"><div class="hud-label">m₀₁ (Y-Mom)</div><div class="hud-val" id="h-m01">—</div></div>
+  <div class="hud-pill"><div class="hud-label">θ (Angle)</div><div class="hud-val angle" id="h-theta">—</div></div>
+</div>
+
+<div id="status">캔버스를 드래그하여 밝기 중심(Blob)을 이동하세요 — 방향 벡터가 실시간으로 갱신됩니다.</div>
+
+<div id="main">
+  <div id="canvas-wrap">
+    <canvas id="c" width="360" height="360"></canvas>
+    <div id="drag-hint">✥ Drag Light Blob</div>
+  </div>
+
+  <div id="info-panel">
+    <div class="section-title">알고리즘 원리</div>
+    <div class="formula-box">
+      <b style="color:#ddd">Intensity Moments:</b><br>
+      <span class="f">m₀₀ = Σ I(x,y)</span> &nbsp;← 총 밝기(질량)<br>
+      <span class="f">m₁₀ = Σ x·I(x,y)</span> &nbsp;← X 모멘트<br>
+      <span class="f">m₀₁ = Σ y·I(x,y)</span> &nbsp;← Y 모멘트<br><br>
+      <b style="color:#ddd">Center of Mass:</b><br>
+      <span class="f">C = (m₁₀/m₀₀, m₀₁/m₀₀)</span><br><br>
+      <b style="color:#ddd">Orientation:</b><br>
+      <span class="c">θ = atan2(m₀₁, m₁₀)</span><br><br>
+      <span style="color:#777">기하학적 중심(0,0)에서 밝기 중심(C)으로의<br>
+      벡터가 키포인트의 "북쪽"을 정의 →<br>
+      회전 불변 기술자(rBRIEF) 생성에 사용</span>
+    </div>
+
+    <div class="legend">
+      <div class="section-title">범례</div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#ffffff;border:2px solid #888"></div>
+        기하학적 중심 (0, 0)
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#f0c060"></div>
+        밝기 중심 (Center of Mass)
+      </div>
+      <div class="legend-item">
+        <div class="legend-line" style="background:linear-gradient(90deg,#f0c060,#ff8844)"></div>
+        방향 벡터 θ
+      </div>
+      <div class="legend-item">
+        <div style="width:24px;height:12px;background:linear-gradient(90deg,#12121a,#5577ee);border-radius:2px;flex-shrink:0"></div>
+        픽셀 밝기 (강도)
+      </div>
+    </div>
+
+    <div class="section-title">파라미터</div>
+    <div class="ctrl-row">
+      <span class="ctrl-label">Light Spread (σ)</span>
+      <input type="range" id="s-spread" min="1" max="5" step="0.1" value="2.5">
+      <span class="ctrl-val" id="v-spread">2.5</span>
+    </div>
+    <div class="ctrl-row">
+      <span class="ctrl-label">Max Brightness</span>
+      <input type="range" id="s-bright" min="50" max="255" step="1" value="255">
+      <span class="ctrl-val" id="v-bright">255</span>
+    </div>
+    <button class="btn" onclick="resetBlob()">↺ Reset Blob</button>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const GRID = 10;
+
+let blobX = 1.5, blobY = -1.5;
+let spread = 2.5, bright = 255;
+let isDragging = false;
+
+function getCell(canvas) {
+  return Math.floor(Math.min(canvas.width, canvas.height) * 0.82) / GRID;
+}
+
+function resetBlob() {
+  blobX = 0; blobY = 0;
+  draw();
+}
+
+function toGrid(px, py) {
+  const cell = getCell(canvas);
+  const cx = canvas.width / 2, cy = canvas.height / 2;
+  let gx = (px - cx) / cell;
+  let gy = (py - cy) / cell;
+  gx = Math.max(-4.5, Math.min(4.5, gx));
+  gy = Math.max(-4.5, Math.min(4.5, gy));
+  return { gx, gy };
+}
+
+canvas.addEventListener('mousedown', e => {
+  isDragging = true;
+  const r = canvas.getBoundingClientRect();
+  const { gx, gy } = toGrid(e.clientX - r.left, e.clientY - r.top);
+  blobX = gx; blobY = gy; draw();
+});
+canvas.addEventListener('mousemove', e => {
+  if (!isDragging) return;
+  const r = canvas.getBoundingClientRect();
+  const { gx, gy } = toGrid(e.clientX - r.left, e.clientY - r.top);
+  blobX = gx; blobY = gy; draw();
+});
+canvas.addEventListener('mouseup', () => isDragging = false);
+canvas.addEventListener('mouseleave', () => isDragging = false);
+
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault(); isDragging = true;
+  const r = canvas.getBoundingClientRect();
+  const t = e.touches[0];
+  const { gx, gy } = toGrid(t.clientX - r.left, t.clientY - r.top);
+  blobX = gx; blobY = gy; draw();
+}, { passive: false });
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (!isDragging) return;
+  const r = canvas.getBoundingClientRect();
+  const t = e.touches[0];
+  const { gx, gy } = toGrid(t.clientX - r.left, t.clientY - r.top);
+  blobX = gx; blobY = gy; draw();
+}, { passive: false });
+canvas.addEventListener('touchend', () => isDragging = false);
+
+function draw() {
+  const W = canvas.width, H = canvas.height;
+  const cell = getCell(canvas);
+  const cx = W / 2, cy = H / 2;
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#0d0d14';
+  ctx.fillRect(0, 0, W, H);
+
+  // Compute moments
+  let m00 = 0, m10 = 0, m01 = 0;
+  const cells = [];
+  for (let j = 0; j < GRID; j++) {
+    for (let i = 0; i < GRID; i++) {
+      const x = i - 4.5, y = j - 4.5;
+      const distSq = (x - blobX) ** 2 + (y - blobY) ** 2;
+      const val = bright * Math.exp(-distSq / (2 * spread * spread));
+      m00 += val; m10 += x * val; m01 += y * val;
+      cells.push({ x, y, i, j, val });
+    }
+  }
+  const comX = m10 / m00, comY = m01 / m00;
+  const theta = Math.atan2(m01, m10);
+  const deg = (theta * 180 / Math.PI).toFixed(1);
+
+  // Update HUD
+  document.getElementById('h-m00').textContent   = Math.round(m00).toLocaleString();
+  document.getElementById('h-m10').textContent   = Math.round(m10).toLocaleString();
+  document.getElementById('h-m01').textContent   = Math.round(m01).toLocaleString();
+  document.getElementById('h-theta').textContent = deg + '°';
+
+  // Draw grid cells
+  cells.forEach(({ x, y, val }) => {
+    const px = cx + x * cell, py = cy + y * cell;
+    const t = val / 255;
+    // Color: dark blue → bright white-blue
+    const r = Math.round(t * 180);
+    const g = Math.round(t * 200);
+    const b = Math.round(80 + t * 175);
+    ctx.fillStyle = `rgb(${r},${g},${b})`;
+    ctx.fillRect(px - cell / 2, py - cell / 2, cell, cell);
+
+    // Grid border
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.lineWidth = 0.5;
+    ctx.strokeRect(px - cell / 2, py - cell / 2, cell, cell);
+
+    // Show intensity value if bright enough
+    if (val > 30) {
+      ctx.fillStyle = val > 180 ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.55)';
+      ctx.font = `${Math.max(9, Math.round(cell * 0.25))}px monospace`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(Math.round(val), px, py);
+    }
+  });
+
+  // Crosshair axes (dashed)
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([5, 5]);
+  ctx.beginPath();
+  ctx.moveTo(cx - cell * 5.5, cy); ctx.lineTo(cx + cell * 5.5, cy);
+  ctx.moveTo(cx, cy - cell * 5.5); ctx.lineTo(cx, cy + cell * 5.5);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+
+  // Geometric center marker
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+  ctx.lineWidth = 1.5;
+  const hs = 6;
+  ctx.beginPath();
+  ctx.moveTo(cx - hs, cy); ctx.lineTo(cx + hs, cy);
+  ctx.moveTo(cx, cy - hs); ctx.lineTo(cx, cy + hs);
+  ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(cx, cy, 3.5, 0, Math.PI * 2);
+  ctx.fill();
+  // Label
+  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  ctx.font = '11px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillText('(0, 0)', cx + 7, cy + 4);
+  ctx.restore();
+
+  // Orientation vector (0,0) → CoM, extended
+  const comPx = cx + comX * cell;
+  const comPy = cy + comY * cell;
+  const dx = comX * cell, dy = comY * cell;
+  const len = Math.sqrt(dx * dx + dy * dy);
+
+  if (len > 4) {
+    // Extend vector to edge of grid for visual clarity
+    const scale = (cell * 5) / len;
+    const ex = dx * scale, ey = dy * scale;
+
+    // Shadow glow
+    ctx.save();
+    ctx.shadowColor = '#f0c060';
+    ctx.shadowBlur = 8;
+    ctx.strokeStyle = '#f0a030';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + ex, cy + ey);
+    ctx.stroke();
+
+    // Arrowhead
+    const angle = Math.atan2(ey, ex);
+    const aLen = 12;
+    const ax = cx + ex, ay = cy + ey;
+    ctx.fillStyle = '#f0c060';
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(ax - aLen * Math.cos(angle - 0.4), ay - aLen * Math.sin(angle - 0.4));
+    ctx.lineTo(ax - aLen * Math.cos(angle + 0.4), ay - aLen * Math.sin(angle + 0.4));
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    // Angle arc
+    ctx.save();
+    ctx.strokeStyle = 'rgba(240,192,96,0.4)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(cx, cy, cell * 1.2, 0, angle, angle < 0);
+    ctx.stroke();
+
+    // Angle label
+    const midA = angle / 2;
+    const labelR = cell * 1.5;
+    ctx.fillStyle = '#f0c060';
+    ctx.font = 'bold 12px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`${deg}°`, cx + labelR * Math.cos(midA), cy + labelR * Math.sin(midA));
+    ctx.restore();
+  }
+
+  // Center of Mass dot
+  ctx.save();
+  ctx.shadowColor = '#f0c060';
+  ctx.shadowBlur = 12;
+  ctx.fillStyle = '#f0c060';
+  ctx.beginPath();
+  ctx.arc(comPx, comPy, 7, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // CoM label
+  ctx.fillStyle = '#f0c060';
+  ctx.font = 'bold 11px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'bottom';
+  const lx = comPx + 10, ly = comPy - 4;
+  ctx.fillText('C (Center of Mass)', lx > W - 130 ? comPx - 130 : lx, ly < 14 ? comPy + 18 : ly);
+
+  // Dashed line from origin to CoM
+  ctx.save();
+  ctx.strokeStyle = 'rgba(240,192,96,0.35)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 4]);
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(comPx, comPy);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
+// Sliders
+document.getElementById('s-spread').addEventListener('input', function() {
+  spread = +this.value;
+  document.getElementById('v-spread').textContent = spread.toFixed(1);
+  draw();
+});
+document.getElementById('s-bright').addEventListener('input', function() {
+  bright = +this.value;
+  document.getElementById('v-bright').textContent = bright;
+  draw();
+});
+
+draw();
+</script>
+</body>
+</html>
