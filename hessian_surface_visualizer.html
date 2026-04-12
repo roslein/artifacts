@@ -1,21 +1,29 @@
-
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>헤시안 곡면 시각화</title>
 <style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #f8f8f6; font-family: sans-serif; padding: 16px; }
   .ctrl-row { display:flex; align-items:center; gap:12px; margin:8px 0; }
-  .ctrl-label { font-size:13px; color:var(--color-text-secondary); min-width:170px; }
-  .ctrl-val { font-size:13px; font-weight:500; font-family:var(--font-mono); min-width:44px; text-align:right; }
+  .ctrl-label { font-size:13px; color:#555; min-width:170px; }
+  .ctrl-val { font-size:13px; font-weight:500; font-family:monospace; min-width:44px; text-align:right; color:#111; }
   #hud { display:flex; gap:12px; margin:10px 0 6px; flex-wrap:wrap; }
-  .hud-pill { background:var(--color-background-secondary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-md); padding:6px 14px; font-size:12px; }
-  .hud-label { color:var(--color-text-secondary); margin-bottom:2px; }
-  .hud-val { font-weight:500; font-family:var(--font-mono); font-size:14px; }
-  .hud-val.pos { color:var(--color-text-success); }
-  .hud-val.neg { color:var(--color-text-danger); }
-  .hud-val.zero { color:var(--color-text-secondary); }
-  #canvas-wrap { width:100%; height:360px; border-radius:var(--border-radius-lg); overflow:hidden; border:0.5px solid var(--color-border-tertiary); background:#0a0a12; }
+  .hud-pill { background:#f0f0ee; border:0.5px solid #ddd; border-radius:8px; padding:6px 14px; font-size:12px; }
+  .hud-label { color:#666; margin-bottom:2px; }
+  .hud-val { font-weight:500; font-family:monospace; font-size:14px; color:#111; }
+  .hud-val.pos { color:#22a65a; }
+  .hud-val.neg { color:#e04444; }
+  .hud-val.zero { color:#888; }
+  #canvas-wrap { width:100%; height:360px; border-radius:12px; overflow:hidden; border:0.5px solid #ccc; background:#0a0a12; margin-bottom:10px; }
   #threeCanvas { width:100%!important; height:100%!important; display:block; }
-  .status-bar { font-size:12px; color:var(--color-text-secondary); margin-top:6px; padding:6px 10px; background:var(--color-background-secondary); border-radius:var(--border-radius-md); }
+  .status-bar { font-size:12px; color:#555; margin-top:6px; padding:6px 10px; background:#f0f0ee; border-radius:8px; }
+  input[type=range] { flex:1; accent-color:#4466cc; }
 </style>
-
-<h2 class="sr-only">헤시안 행렬 곡면 시각화 — Lxx, Lyy, Lxy 슬라이더로 국소 곡률을 조절하여 특징점(Blob)과 안장점(Saddle)을 확인하세요.</h2>
+</head>
+<body>
 
 <div id="canvas-wrap"><canvas id="threeCanvas"></canvas></div>
 
@@ -27,17 +35,17 @@
 
 <div class="ctrl-row">
   <span class="ctrl-label">X방향 곡률 (Lxx)</span>
-  <input type="range" id="lxx" min="-5" max="5" step="0.1" value="1.0" style="flex:1">
+  <input type="range" id="lxx" min="-5" max="5" step="0.1" value="1.0">
   <span class="ctrl-val" id="lxx-v">1.0</span>
 </div>
 <div class="ctrl-row">
   <span class="ctrl-label">Y방향 곡률 (Lyy)</span>
-  <input type="range" id="lyy" min="-5" max="5" step="0.1" value="-1.0" style="flex:1">
+  <input type="range" id="lyy" min="-5" max="5" step="0.1" value="-1.0">
   <span class="ctrl-val" id="lyy-v">-1.0</span>
 </div>
 <div class="ctrl-row">
   <span class="ctrl-label">대각선 뒤틀림 (Lxy)</span>
-  <input type="range" id="lxy" min="-3" max="3" step="0.1" value="0.0" style="flex:1">
+  <input type="range" id="lxy" min="-3" max="3" step="0.1" value="0.0">
   <span class="ctrl-val" id="lxy-v">0.0</span>
 </div>
 <div class="status-bar" id="status-bar">슬라이더를 조절하여 곡면 형태를 변경하세요.</div>
@@ -47,9 +55,10 @@
 (function() {
   const canvas = document.getElementById('threeCanvas');
   const wrap = document.getElementById('canvas-wrap');
-  const W = wrap.clientWidth || 600, H = 360;
+  const H = 360;
+  const W = wrap.clientWidth || 600;
 
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setSize(W, H);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setClearColor(0x0a0a12, 1);
@@ -59,13 +68,12 @@
   camera.position.set(18, 14, 18);
   camera.lookAt(0, 0, 0);
 
-  // OrbitControls via pointer events (minimal)
   let isDown = false, lastX = 0, lastY = 0, theta = 0.75, phi = 0.85, radius = 26;
   canvas.addEventListener('pointerdown', e => { isDown = true; lastX = e.clientX; lastY = e.clientY; });
   canvas.addEventListener('pointermove', e => {
     if (!isDown) return;
-    const dx = e.clientX - lastX, dy = e.clientY - lastY;
-    theta -= dx * 0.01; phi = Math.max(0.1, Math.min(Math.PI - 0.1, phi + dy * 0.01));
+    theta -= (e.clientX - lastX) * 0.01;
+    phi = Math.max(0.1, Math.min(Math.PI - 0.1, phi + (e.clientY - lastY) * 0.01));
     lastX = e.clientX; lastY = e.clientY;
     camera.position.set(
       radius * Math.sin(phi) * Math.sin(theta),
@@ -85,7 +93,6 @@
     camera.lookAt(0, 0, 0);
   }, { passive: true });
 
-  // Lights
   scene.add(new THREE.AmbientLight(0xffffff, 0.55));
   const dirL = new THREE.DirectionalLight(0xffffff, 0.9);
   dirL.position.set(10, 20, 10);
@@ -94,68 +101,41 @@
   dirL2.position.set(-10, -5, -10);
   scene.add(dirL2);
 
-  // Axes helper
-  const axH = new THREE.AxesHelper(10);
-  scene.add(axH);
-
-  // Grid on XZ plane
+  scene.add(new THREE.AxesHelper(10));
   const grid = new THREE.GridHelper(20, 20, 0x334455, 0x223344);
   grid.material.opacity = 0.3; grid.material.transparent = true;
   scene.add(grid);
 
-  // Surface geometry
-  const segs = 80, size = 20;
+  const segs = 80, size = 20, n = segs + 1;
   const geo = new THREE.BufferGeometry();
   const verts = [], inds = [], uvs = [];
-  const n = segs + 1;
   for (let j = 0; j <= segs; j++) {
     for (let i = 0; i <= segs; i++) {
-      const x = (i / segs - 0.5) * size;
-      const z = (j / segs - 0.5) * size;
-      verts.push(x, 0, z);
+      verts.push((i / segs - 0.5) * size, 0, (j / segs - 0.5) * size);
       uvs.push(i / segs, j / segs);
     }
   }
   for (let j = 0; j < segs; j++) {
     for (let i = 0; i < segs; i++) {
-      const a = j * n + i, b = a + 1, c = a + n, d = c + 1;
-      inds.push(a, b, d, a, d, c);
+      const a = j*n+i, b=a+1, c=a+n, d=c+1;
+      inds.push(a,b,d,a,d,c);
     }
   }
   geo.setIndex(inds);
   geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
   geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-
-  // Vertex colors for height-based coloring
   const colors = new Float32Array(verts.length);
   geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
 
-  const mat = new THREE.MeshPhongMaterial({
-    vertexColors: true,
-    side: THREE.DoubleSide,
-    transparent: true,
-    opacity: 0.88,
-    shininess: 50,
-  });
-  const mesh = new THREE.Mesh(geo, mat);
-  scene.add(mesh);
-
-  // Wireframe
+  const mat = new THREE.MeshPhongMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: true, opacity: 0.88, shininess: 50 });
+  scene.add(new THREE.Mesh(geo, mat));
   const wMat = new THREE.MeshBasicMaterial({ color: 0x334466, wireframe: true, transparent: true, opacity: 0.12 });
-  const wMesh = new THREE.Mesh(geo, wMat);
-  scene.add(wMesh);
+  scene.add(new THREE.Mesh(geo, wMat));
+  scene.add(new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 12), new THREE.MeshBasicMaterial({ color: 0xffffff })));
 
-  // Center marker
-  const markerGeo = new THREE.SphereGeometry(0.18, 12, 12);
-  const markerMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-  scene.add(new THREE.Mesh(markerGeo, markerMat));
-
-  // State
   let lxx = 1.0, lyy = -1.0, lxy = 0.0;
 
-  // Color interpolation for height
   function heightColor(t) {
-    // t in [-1, 1]: blue (low) → white (mid) → red (high)
     const c = new THREE.Color();
     if (t < 0) c.setRGB(0.2 + 0.6*(1+t), 0.35 + 0.5*(1+t), 0.8);
     else        c.setRGB(0.9, 0.55 - 0.4*t, 0.25 - 0.2*t);
@@ -166,18 +146,14 @@
     const pos = geo.attributes.position.array;
     const col = geo.attributes.color.array;
     let minY = Infinity, maxY = -Infinity;
-
-    // First pass: compute heights
     const ys = new Float32Array(pos.length / 3);
     for (let i = 0; i < pos.length; i += 3) {
-      const x = pos[i], z = pos[i + 2];
-      const y = 0.5 * lxx * x*x + lxy * x * z + 0.5 * lyy * z*z;
+      const x = pos[i], z = pos[i+2];
+      const y = 0.5*lxx*x*x + lxy*x*z + 0.5*lyy*z*z;
       ys[i/3] = y;
       if (y < minY) minY = y;
       if (y > maxY) maxY = y;
     }
-
-    // Second pass: assign with visual scale + color
     const range = Math.max(maxY - minY, 0.01);
     const scale = Math.min(5 / range, 1.5);
     for (let i = 0; i < pos.length; i += 3) {
@@ -187,17 +163,14 @@
       const c = heightColor(t);
       col[i] = c.r; col[i+1] = c.g; col[i+2] = c.b;
     }
-
     geo.attributes.position.needsUpdate = true;
     geo.attributes.color.needsUpdate = true;
     geo.computeVertexNormals();
 
-    // HUD
-    const det = lxx * lyy - lxy * lxy;
+    const det = lxx*lyy - lxy*lxy;
     const trace = lxx + lyy;
     document.getElementById('det-val').textContent = det.toFixed(3);
     document.getElementById('trace-val').textContent = trace.toFixed(3);
-
     const detEl = document.getElementById('det-val');
     const classEl = document.getElementById('class-val');
     const statusEl = document.getElementById('status-bar');
@@ -226,7 +199,6 @@
     }
   }
 
-  // Slider wiring
   function wire(id, valId, setter) {
     const el = document.getElementById(id);
     el.addEventListener('input', () => {
@@ -242,15 +214,12 @@
 
   updateSurface();
 
-  // Render loop
-  let animId;
   function animate() {
-    animId = requestAnimationFrame(animate);
+    requestAnimationFrame(animate);
     renderer.render(scene, camera);
   }
   animate();
 
-  // Resize
   window.addEventListener('resize', () => {
     const nw = wrap.clientWidth;
     renderer.setSize(nw, H);
@@ -259,3 +228,5 @@
   });
 })();
 </script>
+</body>
+</html>
