@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Haar Filter: Edge Detection (Pure HTML)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, sans-serif;
+      background: #f5f5f5;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    header {
+      padding: 12px;
+      font-weight: 600;
+    }
+
+    canvas {
+      background: white;
+      border: 1px solid #ccc;
+      touch-action: none;
+    }
+
+    .hud {
+      margin-top: 8px;
+      display: flex;
+      gap: 16px;
+      font-family: monospace;
+    }
+
+    button {
+      margin-top: 12px;
+      padding: 6px 12px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+
+<body>
+
+<header>Haar Filter: Vertical Edge Detection</header>
+
+<canvas id="canvas" width="420" height="420"></canvas>
+
+<div class="hud">
+  <div>White (+): <span id="white">0</span></div>
+  <div>Black (-): <span id="black">0</span></div>
+  <div>Response: <span id="response">0</span></div>
+</div>
+
+<button onclick="resetFilter()">Reset Filter</button>
+
+<script>
+/* ===============================
+   Haar Filter Demo (Pure JS)
+================================ */
+
+// --- Grid setup ---
+const gridSize = 8;
+const grid = [];
+for (let r = 0; r < gridSize; r++) {
+  const row = [];
+  for (let c = 0; c < gridSize; c++) {
+    row.push(c < 4 ? 255 : 0); // vertical edge
+  }
+  grid.push(row);
+}
+
+// --- Filter parameters ---
+const filter = {
+  w: 4,
+  h: 2,
+  r: 3,
+  c: 2,
+  dragging: false
+};
+
+// --- Canvas ---
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+const cellSize = canvas.width * 0.08;
+const gridPx = cellSize * gridSize;
+const offsetX = (canvas.width - gridPx) / 2;
+const offsetY = (canvas.height - gridPx) / 2;
+
+// --- HUD ---
+const whiteEl = document.getElementById("white");
+const blackEl = document.getElementById("black");
+const respEl  = document.getElementById("response");
+
+// --- Mouse Handling ---
+canvas.addEventListener("pointerdown", e => {
+  const {x, y} = getPos(e);
+  if (insideFilter(x, y)) filter.dragging = true;
+});
+
+canvas.addEventListener("pointermove", e => {
+  if (!filter.dragging) return;
+  const {x, y} = getPos(e);
+
+  const c = Math.floor((x - offsetX - filter.w * cellSize / 2) / cellSize);
+  const r = Math.floor((y - offsetY - filter.h * cellSize / 2) / cellSize);
+
+  filter.c = clamp(c, 0, gridSize - filter.w);
+  filter.r = clamp(r, 0, gridSize - filter.h);
+  draw();
+});
+
+canvas.addEventListener("pointerup", () => {
+  filter.dragging = false;
+});
+canvas.addEventListener("pointerleave", () => {
+  filter.dragging = false;
+});
+
+// --- Utility ---
+function getPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+}
+
+function clamp(v, lo, hi) {
+  return Math.max(lo, Math.min(hi, v));
+}
+
+function resetFilter() {
+  filter.r = 3;
+  filter.c = 2;
+  draw();
+}
+
+// --- Haar Response ---
+function computeResponse() {
+  let white = 0;
+  let black = 0;
+
+  for (let dr = 0; dr < filter.h; dr++) {
+    for (let dc = 0; dc < filter.w; dc++) {
+      const v = grid[filter.r + dr][filter.c + dc];
+      if (dc < filter.w / 2) white += v;
+      else black += v;
+    }
+  }
+
+  return { white, black, response: white - black };
+}
+
+// --- Drawing ---
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Grid
+  for (let r = 0; r < gridSize; r++) {
+    for (let c = 0; c < gridSize; c++) {
+      const v = grid[r][c];
+      const x = offsetX + c * cellSize;
+      const y = offsetY + r * cellSize;
+
+      ctx.fillStyle = `rgb(${v},${v},${v})`;
+      ctx.fillRect(x, y, cellSize, cellSize);
+      ctx.strokeRect(x, y, cellSize, cellSize);
+
+      ctx.fillStyle = v > 128 ? "#000" : "#fff";
+      ctx.font = `${cellSize * 0.3}px monospace`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(v, x + cellSize/2, y + cellSize/2);
+    }
+  }
+
+  // Filter box
+  const fx = offsetX + filter.c * cellSize;
+  const fy = offsetY + filter.r * cellSize;
+  const fw = filter.w * cellSize;
+  const fh = filter.h * cellSize;
+
+  ctx.fillStyle = "rgba(0,150,136,0.2)";
+  ctx.fillRect(fx, fy, fw, fh);
+  ctx.strokeStyle = "#009688";
+  ctx.lineWidth = 3;
+  ctx.strokeRect(fx, fy, fw, fh);
+  ctx.beginPath();
+  ctx.moveTo(fx + fw/2, fy);
+  ctx.lineTo(fx + fw/2, fy + fh);
+  ctx.stroke();
+
+  ctx.fillStyle = "#00796b";
+  ctx.font = `bold ${cellSize * 0.5}px sans-serif`;
+  ctx.fillText("+1", fx + fw*0.25, fy + fh*0.55);
+  ctx.fillText("-1", fx + fw*0.75, fy + fh*0.55);
+
+  // HUD
+  const res = computeResponse();
+  whiteEl.textContent = res.white;
+  blackEl.textContent = res.black;
+  respEl.textContent  = res.response;
+}
+
+// Initial draw
+draw();
+</script>
+
+</body>
+</html>
