@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>K-Means 시각 단어 사전</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #12121a; color: #eee; font-family: sans-serif; padding: 16px; }
+  h2 { font-size: 16px; font-weight: 500; color: #ddd; margin-bottom: 12px; }
+
+  #hud { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+  .hud-pill { background: #1e1e2a; border: 0.5px solid #333; border-radius: 8px; padding: 6px 14px; }
+  .hud-label { font-size: 11px; color: #777; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 3px; }
+  .hud-val { font-size: 14px; font-weight: 600; font-family: monospace; color: #ccc; }
+
+  #status { font-size: 12px; padding: 6px 12px; border-radius: 8px; margin-bottom: 12px;
+            background: #1a1e2e; border: 0.5px solid #334; color: #8aabdd; }
+  #status.done { background: #1a2e1a; border-color: #2d5c2d; color: #5ddb82; }
+
+  #main { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+
+  #canvas-wrap { flex: 0 0 auto; position: relative; }
+  canvas { display: block; border-radius: 10px; border: 0.5px solid #333; background: #0d0d14; }
+
+  #info-panel { flex: 1; min-width: 200px; }
+  .section-title { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.8px; margin: 12px 0 8px; }
+
+  .formula-box { background: #1a1a26; border: 0.5px solid #333; border-radius: 8px;
+                 padding: 10px 14px; font-size: 12px; color: #aaa; line-height: 2; }
+  .formula-box .f { color: #88aaff; font-family: monospace; }
+
+  .step-list { display: flex; flex-direction: column; gap: 6px; }
+  .step-item { display: flex; align-items: flex-start; gap: 8px; padding: 7px 10px;
+               border-radius: 8px; border: 0.5px solid #333; background: #1a1a26;
+               font-size: 12px; color: #aaa; transition: border-color 0.2s, background 0.2s; }
+  .step-item.active { background: #1a2035; border-color: #5577ee88; color: #ccd; }
+  .step-item.done-step { background: #1a2e1a; border-color: #2d6c3a88; color: #9dcca8; }
+  .step-num { font-weight: 700; font-family: monospace; color: #5577ee; min-width: 16px; }
+
+  .ctrl-row { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+  .ctrl-label { font-size: 12px; color: #aaa; min-width: 140px; }
+  .ctrl-val { font-size: 12px; font-weight: 600; font-family: monospace; color: #ddd; min-width: 20px; text-align: right; }
+  input[type=range] { flex: 1; accent-color: #5577ee; }
+
+  .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px; }
+  .btn { background: #2a2a3a; border: 0.5px solid #444; color: #ccc; padding: 8px 6px;
+         border-radius: 8px; font-size: 12px; cursor: pointer; text-align: center; }
+  .btn:hover { background: #333348; }
+  .btn.primary { background: #1e2e4a; border-color: #4466aa; color: #88aaff; }
+  .btn.primary:hover { background: #243658; }
+  .btn.wide { grid-column: 1 / -1; }
+  .btn.reset { color: #888; }
+
+  #word-list { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+  .word-item { display: flex; align-items: center; gap: 8px; padding: 5px 10px;
+               border-radius: 6px; border: 0.5px solid #333; font-size: 11px; font-family: monospace; }
+  .word-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+</style>
+</head>
+<body>
+
+<h2>시각 단어 사전 구축 — K-Means Clustering</h2>
+
+<div id="hud">
+  <div class="hud-pill"><div class="hud-label">K (단어 수)</div><div class="hud-val" id="h-k">4</div></div>
+  <div class="hud-pill"><div class="hud-label">특징점</div><div class="hud-val" id="h-dots">300</div></div>
+  <div class="hud-pill"><div class="hud-label">반복 횟수</div><div class="hud-val" id="h-iter">0</div></div>
+  <div class="hud-pill"><div class="hud-label">상태</div><div class="hud-val" id="h-state">대기 중</div></div>
+</div>
+
+<div id="status">특징점들이 생성되었습니다. 1단계 버튼을 클릭하여 시작하세요.</div>
+
+<div id="main">
+  <div id="canvas-wrap">
+    <canvas id="c" width="380" height="380"></canvas>
+  </div>
+
+  <div id="info-panel">
+    <div class="section-title">알고리즘 단계</div>
+    <div class="step-list">
+      <div class="step-item" id="si-1"><span class="step-num">1</span><span>무작위 중심점(Centroid) K개 배치</span></div>
+      <div class="step-item" id="si-2"><span class="step-num">2</span><span>각 특징점을 가장 가까운 중심점에 할당</span></div>
+      <div class="step-item" id="si-3"><span class="step-num">3</span><span>클러스터 평균으로 중심점 재계산</span></div>
+    </div>
+
+    <div class="formula-box" style="margin-top:10px">
+      <b style="color:#ddd">K-Means 수식:</b><br>
+      <span class="f">할당: argmin_k ||x - μ_k||²</span><br>
+      <span class="f">갱신: μ_k = (1/|C_k|) Σ x_i</span><br><br>
+      <span style="color:#777">각 중심점 = 하나의 시각 단어(Visual Word)<br>
+      K개 중심점 집합 = 어휘 사전(Vocabulary)</span>
+    </div>
+
+    <div class="section-title">파라미터</div>
+    <div class="ctrl-row">
+      <span class="ctrl-label">K (단어 개수)</span>
+      <input type="range" id="s-k" min="2" max="8" step="1" value="4">
+      <span class="ctrl-val" id="v-k">4</span>
+    </div>
+
+    <div class="btn-grid">
+      <button class="btn primary" onclick="step1()">1단계: 중심점 배치</button>
+      <button class="btn primary" onclick="step2()">2단계: 특징점 묶기</button>
+      <button class="btn primary" onclick="step3()">3단계: 중심점 갱신</button>
+      <button class="btn primary" onclick="autoRun()">⏩ 수렴까지 자동</button>
+      <button class="btn wide reset" onclick="initData()">↺ 전체 초기화</button>
+    </div>
+
+    <div class="section-title">시각 단어 목록</div>
+    <div id="word-list"></div>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+const PAD = 30;
+const DW = W - PAD * 2, DH = H - PAD * 2;
+
+const PALETTE = [
+  '#5577ee','#f0c060','#5ddb82','#ff7eb3',
+  '#ff8844','#88ddff','#cc88ff','#ffdd88'
+];
+
+let dots = [], centroids = [], K = 4, iterCount = 0;
+let autoTimer = null, phaseStep = 0; // 0=init,1=placed,2=assigned,3=updated
+
+function initData() {
+  clearInterval(autoTimer); autoTimer = null;
+  dots = [];
+  // 클러스터 느낌 나도록 가우시안 군집 생성
+  const clumpCenters = Array.from({length: 6}, () => ({
+    x: 0.15 + Math.random() * 0.7,
+    y: 0.15 + Math.random() * 0.7
+  }));
+  for (let i = 0; i < 300; i++) {
+    const c = clumpCenters[Math.floor(Math.random() * clumpCenters.length)];
+    dots.push({
+      nx: Math.max(0.02, Math.min(0.98, c.x + (Math.random()-0.5)*0.28)),
+      ny: Math.max(0.02, Math.min(0.98, c.y + (Math.random()-0.5)*0.28)),
+      ci: -1
+    });
+  }
+  centroids = [];
+  iterCount = 0; phaseStep = 0;
+  setStatus('특징점 300개가 생성되었습니다. 1단계를 클릭하세요.', false);
+  setStepHighlight(0);
+  updateHUD(); updateWordList(); draw();
+}
+
+function step1() {
+  clearInterval(autoTimer); autoTimer = null;
+  centroids = [];
+  for (let i = 0; i < K; i++) {
+    const nx = 0.15 + Math.random() * 0.7;
+    const ny = 0.15 + Math.random() * 0.7;
+    centroids.push({ nx, ny, tnx: nx, tny: ny, ci: i });
+  }
+  dots.forEach(d => d.ci = -1);
+  iterCount = 0; phaseStep = 1;
+  setStatus(`${K}개의 중심점이 무작위로 배치되었습니다. 2단계를 클릭하세요.`, false);
+  setStepHighlight(1); updateHUD(); updateWordList(); draw();
+}
+
+function step2() {
+  if (!centroids.length) { setStatus('먼저 1단계를 실행하세요.', false); return; }
+  dots.forEach(d => {
+    let minD = Infinity, best = 0;
+    centroids.forEach((c, i) => {
+      const dx = d.nx - c.nx, dy = d.ny - c.ny;
+      const dist = dx*dx + dy*dy;
+      if (dist < minD) { minD = dist; best = i; }
+    });
+    d.ci = best;
+  });
+  phaseStep = 2;
+  setStatus('각 특징점이 가장 가까운 중심점에 할당되었습니다. 3단계를 클릭하세요.', false);
+  setStepHighlight(2); updateHUD(); updateWordList(); draw();
+}
+
+function step3() {
+  if (!centroids.length) return;
+  let changed = false;
+  centroids.forEach((c, i) => {
+    const members = dots.filter(d => d.ci === i);
+    if (!members.length) return;
+    const avgX = members.reduce((s, d) => s + d.nx, 0) / members.length;
+    const avgY = members.reduce((s, d) => s + d.ny, 0) / members.length;
+    if (Math.abs(c.tnx - avgX) > 0.001 || Math.abs(c.tny - avgY) > 0.001) {
+      c.tnx = avgX; c.tny = avgY; changed = true;
+    }
+    c.nx = avgX; c.ny = avgY; // 즉시 이동
+  });
+  iterCount++;
+  phaseStep = 3;
+  if (!changed) {
+    setStatus('✅ 중심점이 수렴했습니다! 시각 단어 사전 구축 완료.', true);
+    clearInterval(autoTimer); autoTimer = null;
+    setStepHighlight(-1);
+  } else {
+    setStatus(`${iterCount}회 반복 완료. 2단계를 다시 실행하거나 자동 수렴을 클릭하세요.`, false);
+    setStepHighlight(2);
+  }
+  updateHUD(); updateWordList(); draw();
+}
+
+function autoRun() {
+  if (!centroids.length) step1();
+  clearInterval(autoTimer);
+  let phase = 0;
+  autoTimer = setInterval(() => {
+    if (phase % 2 === 0) step2();
+    else {
+      step3();
+      // check convergence
+      const prev = centroids.map(c => ({x: c.nx, y: c.ny}));
+      const allSame = centroids.every((c, i) =>
+        Math.abs(c.nx - prev[i].x) < 0.001 && Math.abs(c.ny - prev[i].y) < 0.001);
+      if (allSame) { clearInterval(autoTimer); return; }
+    }
+    phase++;
+  }, 600);
+}
+
+function setStatus(msg, done) {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = done ? 'done' : '';
+}
+
+function setStepHighlight(active) {
+  [1,2,3].forEach(i => {
+    const el = document.getElementById(`si-${i}`);
+    el.className = 'step-item' + (i === active ? ' active' : (active === -1 ? ' done-step' : ''));
+  });
+}
+
+function updateHUD() {
+  document.getElementById('h-k').textContent     = K;
+  document.getElementById('h-dots').textContent  = 300;
+  document.getElementById('h-iter').textContent  = iterCount;
+  document.getElementById('h-state').textContent =
+    phaseStep === 0 ? '대기 중' : phaseStep === 1 ? '중심점 배치됨' :
+    phaseStep === 2 ? '할당 완료' : '갱신 완료';
+}
+
+function updateWordList() {
+  const list = document.getElementById('word-list');
+  if (!centroids.length) { list.innerHTML = '<div style="font-size:11px;color:#555">중심점이 없습니다.</div>'; return; }
+  list.innerHTML = centroids.map((c, i) => {
+    const count = dots.filter(d => d.ci === i).length;
+    return `<div class="word-item" style="border-color:${PALETTE[i]}44">
+      <div class="word-dot" style="background:${PALETTE[i]}"></div>
+      <span style="color:${PALETTE[i]}">Word ${i+1}</span>
+      <span style="color:#666;flex:1;text-align:right">${count}개 특징점</span>
+      <span style="color:#555;font-size:10px">(${c.nx.toFixed(2)}, ${c.ny.toFixed(2)})</span>
+    </div>`;
+  }).join('');
+}
+
+function drawStar(x, y, r, color) {
+  const pts = 5, inner = r * 0.4;
+  ctx.beginPath();
+  for (let i = 0; i < pts * 2; i++) {
+    const ang = (i * Math.PI / pts) - Math.PI / 2;
+    const rad = i % 2 === 0 ? r : inner;
+    if (i === 0) ctx.moveTo(x + rad * Math.cos(ang), y + rad * Math.sin(ang));
+    else ctx.lineTo(x + rad * Math.cos(ang), y + rad * Math.sin(ang));
+  }
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#0d0d14';
+  ctx.fillRect(0, 0, W, H);
+
+  // Axis border
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.lineWidth = 0.5;
+  ctx.strokeRect(PAD, PAD, DW, DH);
+
+  // Axis labels
+  ctx.fillStyle = '#444';
+  ctx.font = '11px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('특징 공간 (Feature Space)', W / 2, PAD - 10);
+
+  // Voronoi-like background regions (draw before dots)
+  if (centroids.length && phaseStep >= 2) {
+    const imgData = ctx.createImageData(W, H);
+    for (let py = PAD; py < H - PAD; py++) {
+      for (let px = PAD; px < W - PAD; px++) {
+        const nx = (px - PAD) / DW, ny = (py - PAD) / DH;
+        let minD = Infinity, best = 0;
+        centroids.forEach((c, i) => {
+          const dx = nx - c.nx, dy = ny - c.ny;
+          const d = dx*dx + dy*dy;
+          if (d < minD) { minD = d; best = i; }
+        });
+        const col = PALETTE[best];
+        const r = parseInt(col.slice(1,3),16);
+        const g = parseInt(col.slice(3,5),16);
+        const b = parseInt(col.slice(5,7),16);
+        const idx4 = (py * W + px) * 4;
+        imgData.data[idx4]   = r;
+        imgData.data[idx4+1] = g;
+        imgData.data[idx4+2] = b;
+        imgData.data[idx4+3] = 28;
+      }
+    }
+    ctx.putImageData(imgData, 0, 0);
+  }
+
+  // Dots
+  dots.forEach(d => {
+    const px = PAD + d.nx * DW, py = PAD + d.ny * DH;
+    ctx.beginPath();
+    ctx.arc(px, py, 3.5, 0, Math.PI * 2);
+    ctx.fillStyle = d.ci === -1 ? '#3a3a4a' : PALETTE[d.ci] + 'cc';
+    ctx.fill();
+  });
+
+  // Centroids
+  centroids.forEach((c, i) => {
+    const px = PAD + c.nx * DW, py = PAD + c.ny * DH;
+    const color = PALETTE[i];
+
+    // Glow
+    ctx.save();
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 14;
+    drawStar(px, py, 13, color);
+    ctx.restore();
+
+    // Label
+    ctx.fillStyle = color;
+    ctx.font = 'bold 11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText(`W${i+1}`, px, py + 16);
+  });
+
+  // Convergence message
+  if (phaseStep === 3 && iterCount > 0) {
+    ctx.fillStyle = 'rgba(93,219,130,0.12)';
+    ctx.fillRect(PAD, H - PAD - 28, DW, 24);
+    ctx.fillStyle = '#5ddb82';
+    ctx.font = '12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`${K}개 시각 단어(Visual Words) = 어휘 사전(Vocabulary) 구축 완료`, W/2, H - PAD - 16);
+  }
+}
+
+// K slider
+document.getElementById('s-k').addEventListener('input', function() {
+  K = +this.value;
+  document.getElementById('v-k').textContent = K;
+  initData();
+});
+
+initData();
+</script>
+</body>
+</html>
