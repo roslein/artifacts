@@ -149,7 +149,19 @@ function computeResponse() {
 
   return { white, black, response: white - black };
 }
+function insideFilter(x, y) {
+  const fx = offsetX + filter.c * cellSize;
+  const fy = offsetY + filter.r * cellSize;
+  const fw = filter.w * cellSize;
+  const fh = filter.h * cellSize;
 
+  return (
+    x >= fx &&
+    x <= fx + fw &&
+    y >= fy &&
+    y <= fy + fh
+  );
+}
 // --- Drawing ---
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
