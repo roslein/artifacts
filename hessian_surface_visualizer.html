@@ -1,0 +1,261 @@
+
+<style>
+  .ctrl-row { display:flex; align-items:center; gap:12px; margin:8px 0; }
+  .ctrl-label { font-size:13px; color:var(--color-text-secondary); min-width:170px; }
+  .ctrl-val { font-size:13px; font-weight:500; font-family:var(--font-mono); min-width:44px; text-align:right; }
+  #hud { display:flex; gap:12px; margin:10px 0 6px; flex-wrap:wrap; }
+  .hud-pill { background:var(--color-background-secondary); border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-md); padding:6px 14px; font-size:12px; }
+  .hud-label { color:var(--color-text-secondary); margin-bottom:2px; }
+  .hud-val { font-weight:500; font-family:var(--font-mono); font-size:14px; }
+  .hud-val.pos { color:var(--color-text-success); }
+  .hud-val.neg { color:var(--color-text-danger); }
+  .hud-val.zero { color:var(--color-text-secondary); }
+  #canvas-wrap { width:100%; height:360px; border-radius:var(--border-radius-lg); overflow:hidden; border:0.5px solid var(--color-border-tertiary); background:#0a0a12; }
+  #threeCanvas { width:100%!important; height:100%!important; display:block; }
+  .status-bar { font-size:12px; color:var(--color-text-secondary); margin-top:6px; padding:6px 10px; background:var(--color-background-secondary); border-radius:var(--border-radius-md); }
+</style>
+
+<h2 class="sr-only">헤시안 행렬 곡면 시각화 — Lxx, Lyy, Lxy 슬라이더로 국소 곡률을 조절하여 특징점(Blob)과 안장점(Saddle)을 확인하세요.</h2>
+
+<div id="canvas-wrap"><canvas id="threeCanvas"></canvas></div>
+
+<div id="hud">
+  <div class="hud-pill"><div class="hud-label">행렬식 (Det H)</div><div class="hud-val" id="det-val">—</div></div>
+  <div class="hud-pill"><div class="hud-label">판정</div><div class="hud-val" id="class-val">—</div></div>
+  <div class="hud-pill"><div class="hud-label">Trace (Lxx+Lyy)</div><div class="hud-val" id="trace-val">—</div></div>
+</div>
+
+<div class="ctrl-row">
+  <span class="ctrl-label">X방향 곡률 (Lxx)</span>
+  <input type="range" id="lxx" min="-5" max="5" step="0.1" value="1.0" style="flex:1">
+  <span class="ctrl-val" id="lxx-v">1.0</span>
+</div>
+<div class="ctrl-row">
+  <span class="ctrl-label">Y방향 곡률 (Lyy)</span>
+  <input type="range" id="lyy" min="-5" max="5" step="0.1" value="-1.0" style="flex:1">
+  <span class="ctrl-val" id="lyy-v">-1.0</span>
+</div>
+<div class="ctrl-row">
+  <span class="ctrl-label">대각선 뒤틀림 (Lxy)</span>
+  <input type="range" id="lxy" min="-3" max="3" step="0.1" value="0.0" style="flex:1">
+  <span class="ctrl-val" id="lxy-v">0.0</span>
+</div>
+<div class="status-bar" id="status-bar">슬라이더를 조절하여 곡면 형태를 변경하세요.</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function() {
+  const canvas = document.getElementById('threeCanvas');
+  const wrap = document.getElementById('canvas-wrap');
+  const W = wrap.clientWidth || 600, H = 360;
+
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  renderer.setSize(W, H);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setClearColor(0x0a0a12, 1);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(45, W / H, 0.1, 1000);
+  camera.position.set(18, 14, 18);
+  camera.lookAt(0, 0, 0);
+
+  // OrbitControls via pointer events (minimal)
+  let isDown = false, lastX = 0, lastY = 0, theta = 0.75, phi = 0.85, radius = 26;
+  canvas.addEventListener('pointerdown', e => { isDown = true; lastX = e.clientX; lastY = e.clientY; });
+  canvas.addEventListener('pointermove', e => {
+    if (!isDown) return;
+    const dx = e.clientX - lastX, dy = e.clientY - lastY;
+    theta -= dx * 0.01; phi = Math.max(0.1, Math.min(Math.PI - 0.1, phi + dy * 0.01));
+    lastX = e.clientX; lastY = e.clientY;
+    camera.position.set(
+      radius * Math.sin(phi) * Math.sin(theta),
+      radius * Math.cos(phi),
+      radius * Math.sin(phi) * Math.cos(theta)
+    );
+    camera.lookAt(0, 0, 0);
+  });
+  canvas.addEventListener('pointerup', () => isDown = false);
+  canvas.addEventListener('wheel', e => {
+    radius = Math.max(8, Math.min(60, radius + e.deltaY * 0.05));
+    camera.position.set(
+      radius * Math.sin(phi) * Math.sin(theta),
+      radius * Math.cos(phi),
+      radius * Math.sin(phi) * Math.cos(theta)
+    );
+    camera.lookAt(0, 0, 0);
+  }, { passive: true });
+
+  // Lights
+  scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+  const dirL = new THREE.DirectionalLight(0xffffff, 0.9);
+  dirL.position.set(10, 20, 10);
+  scene.add(dirL);
+  const dirL2 = new THREE.DirectionalLight(0x8899ff, 0.4);
+  dirL2.position.set(-10, -5, -10);
+  scene.add(dirL2);
+
+  // Axes helper
+  const axH = new THREE.AxesHelper(10);
+  scene.add(axH);
+
+  // Grid on XZ plane
+  const grid = new THREE.GridHelper(20, 20, 0x334455, 0x223344);
+  grid.material.opacity = 0.3; grid.material.transparent = true;
+  scene.add(grid);
+
+  // Surface geometry
+  const segs = 80, size = 20;
+  const geo = new THREE.BufferGeometry();
+  const verts = [], inds = [], uvs = [];
+  const n = segs + 1;
+  for (let j = 0; j <= segs; j++) {
+    for (let i = 0; i <= segs; i++) {
+      const x = (i / segs - 0.5) * size;
+      const z = (j / segs - 0.5) * size;
+      verts.push(x, 0, z);
+      uvs.push(i / segs, j / segs);
+    }
+  }
+  for (let j = 0; j < segs; j++) {
+    for (let i = 0; i < segs; i++) {
+      const a = j * n + i, b = a + 1, c = a + n, d = c + 1;
+      inds.push(a, b, d, a, d, c);
+    }
+  }
+  geo.setIndex(inds);
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+
+  // Vertex colors for height-based coloring
+  const colors = new Float32Array(verts.length);
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+  const mat = new THREE.MeshPhongMaterial({
+    vertexColors: true,
+    side: THREE.DoubleSide,
+    transparent: true,
+    opacity: 0.88,
+    shininess: 50,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  scene.add(mesh);
+
+  // Wireframe
+  const wMat = new THREE.MeshBasicMaterial({ color: 0x334466, wireframe: true, transparent: true, opacity: 0.12 });
+  const wMesh = new THREE.Mesh(geo, wMat);
+  scene.add(wMesh);
+
+  // Center marker
+  const markerGeo = new THREE.SphereGeometry(0.18, 12, 12);
+  const markerMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  scene.add(new THREE.Mesh(markerGeo, markerMat));
+
+  // State
+  let lxx = 1.0, lyy = -1.0, lxy = 0.0;
+
+  // Color interpolation for height
+  function heightColor(t) {
+    // t in [-1, 1]: blue (low) → white (mid) → red (high)
+    const c = new THREE.Color();
+    if (t < 0) c.setRGB(0.2 + 0.6*(1+t), 0.35 + 0.5*(1+t), 0.8);
+    else        c.setRGB(0.9, 0.55 - 0.4*t, 0.25 - 0.2*t);
+    return c;
+  }
+
+  function updateSurface() {
+    const pos = geo.attributes.position.array;
+    const col = geo.attributes.color.array;
+    let minY = Infinity, maxY = -Infinity;
+
+    // First pass: compute heights
+    const ys = new Float32Array(pos.length / 3);
+    for (let i = 0; i < pos.length; i += 3) {
+      const x = pos[i], z = pos[i + 2];
+      const y = 0.5 * lxx * x*x + lxy * x * z + 0.5 * lyy * z*z;
+      ys[i/3] = y;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+
+    // Second pass: assign with visual scale + color
+    const range = Math.max(maxY - minY, 0.01);
+    const scale = Math.min(5 / range, 1.5);
+    for (let i = 0; i < pos.length; i += 3) {
+      const y = ys[i/3];
+      pos[i+1] = y * scale;
+      const t = ((y - minY) / range) * 2 - 1;
+      const c = heightColor(t);
+      col[i] = c.r; col[i+1] = c.g; col[i+2] = c.b;
+    }
+
+    geo.attributes.position.needsUpdate = true;
+    geo.attributes.color.needsUpdate = true;
+    geo.computeVertexNormals();
+
+    // HUD
+    const det = lxx * lyy - lxy * lxy;
+    const trace = lxx + lyy;
+    document.getElementById('det-val').textContent = det.toFixed(3);
+    document.getElementById('trace-val').textContent = trace.toFixed(3);
+
+    const detEl = document.getElementById('det-val');
+    const classEl = document.getElementById('class-val');
+    const statusEl = document.getElementById('status-bar');
+
+    if (det > 0.001) {
+      detEl.className = 'hud-val pos';
+      if (trace < 0) {
+        classEl.textContent = '극대 (Maximum)';
+        classEl.className = 'hud-val neg';
+        statusEl.textContent = 'Det > 0, Trace < 0 → 웅덩이(극대). 이미지에서 어두운 Blob 특징점에 해당합니다.';
+      } else {
+        classEl.textContent = '극소 (Minimum) — 밥그릇형 Blob';
+        classEl.className = 'hud-val pos';
+        statusEl.textContent = 'Det > 0, Trace > 0 → 밥그릇(극소). 이미지에서 밝은 Blob 특징점에 해당합니다. 좋은 키포인트!';
+      }
+    } else if (det < -0.001) {
+      detEl.className = 'hud-val neg';
+      classEl.textContent = '안장점 (Saddle / Edge)';
+      classEl.className = 'hud-val neg';
+      statusEl.textContent = 'Det < 0 → 말안장(안장점). 엣지 또는 방향성 있는 패턴. 회전 불변 특징점으로 불안정합니다.';
+    } else {
+      detEl.className = 'hud-val zero';
+      classEl.textContent = '평탄 / 선형 (Flat)';
+      classEl.className = 'hud-val zero';
+      statusEl.textContent = 'Det ≈ 0 → 특징이 없는 평탄한 영역 또는 한 방향만 곡률이 있는 능선입니다.';
+    }
+  }
+
+  // Slider wiring
+  function wire(id, valId, setter) {
+    const el = document.getElementById(id);
+    el.addEventListener('input', () => {
+      const v = parseFloat(el.value);
+      document.getElementById(valId).textContent = v.toFixed(1);
+      setter(v);
+      updateSurface();
+    });
+  }
+  wire('lxx', 'lxx-v', v => lxx = v);
+  wire('lyy', 'lyy-v', v => lyy = v);
+  wire('lxy', 'lxy-v', v => lxy = v);
+
+  updateSurface();
+
+  // Render loop
+  let animId;
+  function animate() {
+    animId = requestAnimationFrame(animate);
+    renderer.render(scene, camera);
+  }
+  animate();
+
+  // Resize
+  window.addEventListener('resize', () => {
+    const nw = wrap.clientWidth;
+    renderer.setSize(nw, H);
+    camera.aspect = nw / H;
+    camera.updateProjectionMatrix();
+  });
+})();
+</script>
