@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FAST Corner Detector</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #12121a; color: #eee; font-family: sans-serif; padding: 16px; }
+
+  h2 { font-size: 16px; font-weight: 500; color: #ddd; margin-bottom: 12px; }
+
+  #hud { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  .hud-pill { background: #1e1e2a; border: 0.5px solid #333; border-radius: 8px; padding: 6px 14px; }
+  .hud-label { font-size: 11px; color: #777; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 3px; }
+  .hud-val { font-size: 14px; font-weight: 600; font-family: monospace; color: #ccc; }
+
+  #status { font-size: 13px; padding: 7px 12px; border-radius: 8px; margin-bottom: 14px; font-weight: 500; }
+  #status.pass { background: #1a2e1a; color: #5ddb82; border: 0.5px solid #2d5c2d; }
+  #status.fail { background: #2e1a1a; color: #ff6b6b; border: 0.5px solid #5c2d2d; }
+
+  #main { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+
+  #canvas-wrap { flex: 0 0 auto; }
+  canvas { display: block; border-radius: 10px; border: 0.5px solid #333; background: #0d0d14; }
+
+  #info-panel { flex: 1; min-width: 220px; }
+
+  .section-title { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.8px; margin: 14px 0 8px; }
+
+  .pixel-row { display: flex; align-items: center; gap: 10px; margin: 5px 0; }
+  .pixel-badge { width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #fff; flex-shrink: 0; }
+  .pixel-bar-wrap { flex: 1; height: 6px; background: #2a2a35; border-radius: 3px; }
+  .pixel-bar { height: 6px; border-radius: 3px; transition: width 0.2s, background 0.2s; }
+  .pixel-label { font-size: 12px; color: #999; min-width: 90px; }
+  .pixel-result { font-size: 11px; font-weight: 600; min-width: 60px; text-align: right; }
+
+  .ctrl-row { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+  .ctrl-label { font-size: 12px; color: #aaa; min-width: 160px; }
+  .ctrl-val { font-size: 12px; font-weight: 600; font-family: monospace; color: #ddd; min-width: 32px; text-align: right; }
+  input[type=range] { flex: 1; accent-color: #5577ee; height: 4px; }
+
+  .btn { background: #2a2a3a; border: 0.5px solid #444; color: #ccc; padding: 6px 14px; border-radius: 8px; font-size: 12px; cursor: pointer; margin-top: 10px; }
+  .btn:hover { background: #333348; }
+
+  .legend { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
+  .legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #999; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+
+  .formula-box { background: #1a1a26; border: 0.5px solid #333; border-radius: 8px; padding: 10px 14px; font-size: 12px; color: #aaa; margin-top: 10px; line-height: 1.8; }
+  .formula-box span { color: #88aaff; font-family: monospace; }
+</style>
+</head>
+<body>
+
+<h2>FAST Corner Detector — High-speed Rejection Test</h2>
+
+<div id="hud">
+  <div class="hud-pill"><div class="hud-label">Center I<sub>p</sub></div><div class="hud-val" id="h-ip">128</div></div>
+  <div class="hud-pill"><div class="hud-label">임계 범위</div><div class="hud-val" id="h-range">98 ~ 158</div></div>
+  <div class="hud-pill"><div class="hud-label">판정 유형</div><div class="hud-val" id="h-type">—</div></div>
+  <div class="hud-pill"><div class="hud-label">통과 Cardinal</div><div class="hud-val" id="h-score">0 / 4</div></div>
+</div>
+
+<div id="status" class="fail">❌ REJECTED</div>
+
+<div id="main">
+  <div id="canvas-wrap">
+    <canvas id="c" width="340" height="340"></canvas>
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#5577ee"></div>중심픽셀 p</div>
+      <div class="legend-dot" style="background:#333;width:10px;height:10px;border-radius:2px"></div>
+      <div class="legend-item"><div class="legend-dot" style="background:#5ddb82"></div>Brighter</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#ff6b6b"></div>Darker</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#666"></div>비활성</div>
+    </div>
+  </div>
+
+  <div id="info-panel">
+    <div class="section-title">Cardinal Pixels (1, 5, 9, 13)</div>
+    <div id="pixel-bars"></div>
+
+    <div class="formula-box">
+      FAST 조건:<br>
+      <span>I_x &gt; I_p + t</span> → Brighter<br>
+      <span>I_x &lt; I_p - t</span> → Darker<br>
+      Cardinal 3개 이상 → Full 16-pixel 검사 진행<br>
+      미통과 → 즉시 기각 (비교 12회 절약)
+    </div>
+
+    <div class="section-title">슬라이더</div>
+
+    <div class="ctrl-row">
+      <span class="ctrl-label">Center Pixel I<sub>p</sub></span>
+      <input type="range" id="s-ip" min="0" max="255" step="1" value="128">
+      <span class="ctrl-val" id="v-ip">128</span>
+    </div>
+    <div class="ctrl-row">
+      <span class="ctrl-label">Threshold t</span>
+      <input type="range" id="s-t" min="5" max="100" step="1" value="30">
+      <span class="ctrl-val" id="v-t">30</span>
+    </div>
+    <div class="ctrl-row">
+      <span class="ctrl-label">Pixel 1 (Top)</span>
+      <input type="range" id="s-1" min="0" max="255" step="1" value="200">
+      <span class="ctrl-val" id="v-1">200</span>
+    </div>
+    <div class="ctrl-row">
+      <span class="ctrl-label">Pixel 5 (Right)</span>
+      <input type="range" id="s-5" min="0" max="255" step="1" value="210">
+      <span class="ctrl-val" id="v-5">210</span>
+    </div>
+    <div class="ctrl-row">
+      <span class="ctrl-label">Pixel 9 (Bottom)</span>
+      <input type="range" id="s-9" min="0" max="255" step="1" value="190">
+      <span class="ctrl-val" id="v-9">190</span>
+    </div>
+    <div class="ctrl-row">
+      <span class="ctrl-label">Pixel 13 (Left)</span>
+      <input type="range" id="s-13" min="0" max="255" step="1" value="50">
+      <span class="ctrl-val" id="v-13">50</span>
+    </div>
+    <button class="btn" onclick="resetPresets()">↺ Reset Presets</button>
+  </div>
+</div>
+
+<script>
+const circleOffsets = [
+  {idx:1,  dx:0,  dy:-3},
+  {idx:2,  dx:1,  dy:-3},
+  {idx:3,  dx:2,  dy:-2},
+  {idx:4,  dx:3,  dy:-1},
+  {idx:5,  dx:3,  dy:0},
+  {idx:6,  dx:3,  dy:1},
+  {idx:7,  dx:2,  dy:2},
+  {idx:8,  dx:1,  dy:3},
+  {idx:9,  dx:0,  dy:3},
+  {idx:10, dx:-1, dy:3},
+  {idx:11, dx:-2, dy:2},
+  {idx:12, dx:-3, dy:1},
+  {idx:13, dx:-3, dy:0},
+  {idx:14, dx:-3, dy:-1},
+  {idx:15, dx:-2, dy:-2},
+  {idx:16, dx:-1, dy:-3},
+];
+const cardinalIdx = [1, 5, 9, 13];
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+let state = { ip:128, t:30, i1:200, i5:210, i9:190, i13:50 };
+
+function getVal() {
+  return {
+    ip: +document.getElementById('s-ip').value,
+    t:  +document.getElementById('s-t').value,
+    i1: +document.getElementById('s-1').value,
+    i5: +document.getElementById('s-5').value,
+    i9: +document.getElementById('s-9').value,
+    i13:+document.getElementById('s-13').value,
+  };
+}
+
+function resetPresets() {
+  const defaults = {ip:128, t:30, i1:200, i5:210, i9:190, i13:50};
+  document.getElementById('s-ip').value  = defaults.ip;
+  document.getElementById('s-t').value   = defaults.t;
+  document.getElementById('s-1').value   = defaults.i1;
+  document.getElementById('s-5').value   = defaults.i5;
+  document.getElementById('s-9').value   = defaults.i9;
+  document.getElementById('s-13').value  = defaults.i13;
+  Object.keys(defaults).forEach(k => {
+    const el = document.getElementById('v-'+k.replace('i','').replace('ip','ip'));
+    // update all val labels
+  });
+  updateAll();
+}
+
+function draw(s) {
+  const W = canvas.width, H = canvas.height;
+  const cell = Math.floor(Math.min(W, H) / 8);
+  const cx = W / 2, cy = H / 2;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Background
+  ctx.fillStyle = '#0d0d14';
+  ctx.fillRect(0, 0, W, H);
+
+  const intensities = {1: s.i1, 5: s.i5, 9: s.i9, 13: s.i13};
+  const results = {};
+  let brighter = 0, darker = 0;
+  cardinalIdx.forEach(idx => {
+    const v = intensities[idx];
+    if (v > s.ip + s.t)      { results[idx] = 'brighter'; brighter++; }
+    else if (v < s.ip - s.t) { results[idx] = 'darker';   darker++;   }
+    else                      { results[idx] = 'none'; }
+  });
+  const score = Math.max(brighter, darker);
+  const passed = score >= 3;
+
+  // Draw Bresenham circle outline (radius 3 in grid units)
+  // Draw thin dashed circle for visual reference
+  ctx.save();
+  ctx.strokeStyle = '#334';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 4]);
+  ctx.beginPath();
+  ctx.arc(cx, cy, 3 * cell, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+
+  // Draw grid pixels — only circle pixels + center
+  const allPixels = new Set(circleOffsets.map(o => `${o.dx},${o.dy}`));
+  allPixels.add('0,0');
+
+  // Draw each circle pixel
+  circleOffsets.forEach(o => {
+    const px = cx + o.dx * cell;
+    const py = cy + o.dy * cell;
+    const isCardinal = cardinalIdx.includes(o.idx);
+    const iVal = isCardinal ? intensities[o.idx] : 120;
+    const status = results[o.idx];
+
+    // Cell background (grayscale intensity)
+    const g = Math.round(iVal);
+    ctx.fillStyle = `rgb(${g},${g},${g})`;
+    ctx.beginPath();
+    ctx.roundRect(px - cell/2, py - cell/2, cell, cell, 4);
+    ctx.fill();
+
+    // Border
+    let borderColor = '#2a2a38';
+    if (isCardinal) {
+      if (status === 'brighter') borderColor = '#5ddb82';
+      else if (status === 'darker') borderColor = '#ff6b6b';
+      else borderColor = '#888';
+    }
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = isCardinal ? 2 : 0.5;
+    ctx.beginPath();
+    ctx.roundRect(px - cell/2, py - cell/2, cell, cell, 4);
+    ctx.stroke();
+
+    // Label
+    const textBright = iVal > 128 ? '#000' : '#fff';
+    ctx.fillStyle = textBright;
+    ctx.font = `bold ${Math.round(cell * 0.28)}px monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(o.idx, px, py);
+
+    // Cardinal: show intensity value below index
+    if (isCardinal) {
+      ctx.font = `${Math.round(cell * 0.22)}px monospace`;
+      ctx.fillStyle = textBright;
+      ctx.globalAlpha = 0.75;
+      ctx.fillText(iVal, px, py + cell * 0.25);
+      ctx.globalAlpha = 1;
+
+      // Result badge
+      if (status !== 'none') {
+        const badgeColor = status === 'brighter' ? '#5ddb82' : '#ff6b6b';
+        const symbol = status === 'brighter' ? '▲' : '▼';
+        const bx = px + cell * 0.38;
+        const by = py - cell * 0.35;
+        ctx.fillStyle = badgeColor;
+        ctx.font = `bold ${Math.round(cell * 0.3)}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(symbol, bx, by);
+      }
+    }
+  });
+
+  // Center pixel
+  const cp = s.ip;
+  ctx.fillStyle = `rgb(${cp},${cp},${cp})`;
+  ctx.beginPath();
+  ctx.roundRect(cx - cell/2, cy - cell/2, cell, cell, 4);
+  ctx.fill();
+
+  // Blue ring for center
+  ctx.strokeStyle = passed ? '#5ddb82' : '#5577ee';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.roundRect(cx - cell/2, cy - cell/2, cell, cell, 4);
+  ctx.stroke();
+
+  // Center label
+  ctx.fillStyle = cp > 128 ? '#000' : '#fff';
+  ctx.font = `bold ${Math.round(cell * 0.28)}px monospace`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('p', cx, cy - cell * 0.1);
+  ctx.font = `${Math.round(cell * 0.22)}px monospace`;
+  ctx.fillStyle = cp > 128 ? '#000a' : '#fffa';
+  ctx.fillText(cp, cx, cy + cell * 0.22);
+
+  // Draw connection lines from center to cardinals
+  cardinalIdx.forEach(idx => {
+    const o = circleOffsets.find(x => x.idx === idx);
+    const px = cx + o.dx * cell;
+    const py = cy + o.dy * cell;
+    const status = results[idx];
+    const color = status === 'brighter' ? '#5ddb82' :
+                  status === 'darker'   ? '#ff6b6b' : '#444';
+    ctx.strokeStyle = color;
+    ctx.lineWidth = status !== 'none' ? 2 : 0.8;
+    ctx.setLineDash(status !== 'none' ? [] : [4, 4]);
+    ctx.globalAlpha = status !== 'none' ? 0.7 : 0.3;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(px, py);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+  });
+
+  // Threshold band annotation (right side)
+  const annoX = W - 12;
+  const bandTop = cy + (-3 * cell) - cell/2;
+  const bandBot = cy + (3 * cell) + cell/2;
+
+  // Bottom labels
+  ctx.fillStyle = '#666';
+  ctx.font = `11px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText(`I_p+t=${s.ip+s.t}`, cx, H - 30);
+  ctx.fillText(`I_p-t=${s.ip-s.t}`, cx + 90, H - 30);
+
+  return { results, score, passed, brighter, darker };
+}
+
+function updatePixelBars(s, results) {
+  const container = document.getElementById('pixel-bars');
+  const cardinals = [
+    { idx: 1,  label: 'Pixel 1 (Top)',    val: s.i1  },
+    { idx: 5,  label: 'Pixel 5 (Right)',  val: s.i5  },
+    { idx: 9,  label: 'Pixel 9 (Bottom)', val: s.i9  },
+    { idx: 13, label: 'Pixel 13 (Left)',  val: s.i13 },
+  ];
+  container.innerHTML = cardinals.map(c => {
+    const status = results[c.idx];
+    const barColor = status === 'brighter' ? '#5ddb82' :
+                     status === 'darker'   ? '#ff6b6b' : '#555';
+    const badgeColor = status === 'brighter' ? '#1a3a22' :
+                       status === 'darker'   ? '#3a1a1a' : '#2a2a35';
+    const badgeBorder = status === 'brighter' ? '#2d6c3a' :
+                        status === 'darker'   ? '#6c2d2d' : '#444';
+    const resultText = status === 'brighter' ? '▲ Brighter' :
+                       status === 'darker'   ? '▼ Darker'   : '— Neutral';
+    const resultColor = status === 'brighter' ? '#5ddb82' :
+                        status === 'darker'   ? '#ff6b6b'   : '#666';
+    return `
+      <div class="pixel-row">
+        <div class="pixel-badge" style="background:${badgeColor};border:1px solid ${badgeBorder};color:${resultColor}">${c.idx}</div>
+        <span class="pixel-label" style="color:#aaa">${c.label}</span>
+        <div class="pixel-bar-wrap">
+          <div class="pixel-bar" style="width:${c.val/255*100}%;background:${barColor}"></div>
+        </div>
+        <span style="font-size:12px;font-family:monospace;color:#ccc;min-width:28px;text-align:right">${c.val}</span>
+        <span class="pixel-result" style="color:${resultColor}">${resultText}</span>
+      </div>`;
+  }).join('');
+}
+
+function updateAll() {
+  const s = getVal();
+
+  // update val labels
+  document.getElementById('v-ip').textContent = s.ip;
+  document.getElementById('v-t').textContent  = s.t;
+  document.getElementById('v-1').textContent  = s.i1;
+  document.getElementById('v-5').textContent  = s.i5;
+  document.getElementById('v-9').textContent  = s.i9;
+  document.getElementById('v-13').textContent = s.i13;
+
+  const { results, score, passed, brighter, darker } = draw(s);
+
+  // HUD
+  document.getElementById('h-ip').textContent    = s.ip;
+  document.getElementById('h-range').textContent = `${s.ip - s.t} ~ ${s.ip + s.t}`;
+  document.getElementById('h-type').textContent  =
+    score >= 3 ? (brighter >= 3 ? 'Brighter' : 'Darker') : '—';
+  document.getElementById('h-score').textContent = `${score} / 4`;
+
+  // Status
+  const statusEl = document.getElementById('status');
+  if (passed) {
+    statusEl.className = 'pass';
+    statusEl.textContent = '✅ PASSED — 16픽셀 전체 검사 진행';
+  } else {
+    statusEl.className = 'fail';
+    statusEl.textContent = `❌ REJECTED — 코너 아님. 비교 ${16-4}회 절약!`;
+  }
+
+  updatePixelBars(s, results);
+}
+
+// Wire sliders
+['s-ip','s-t','s-1','s-5','s-9','s-13'].forEach(id => {
+  document.getElementById(id).addEventListener('input', updateAll);
+});
+
+updateAll();
+</script>
+</body>
+</html>
