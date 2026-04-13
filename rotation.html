@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3D 자세 제어 시뮬레이션</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Noto+Sans+KR:wght@300;400;500&display=swap');
+
+  :root {
+    --bg: #0a0c10;
+    --surface: #111318;
+    --panel: #161b22;
+    --border: #21262d;
+    --accent: #58a6ff;
+    --accent2: #3fb950;
+    --accent3: #f78166;
+    --accent4: #d2a8ff;
+    --text: #e6edf3;
+    --text-muted: #7d8590;
+    --text-dim: #484f58;
+    --roll-color: #f78166;
+    --pitch-color: #3fb950;
+    --yaw-color: #58a6ff;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Noto Sans KR', sans-serif;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* ─── Header ─────────────────────────────── */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 20px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .header-title {
+    font-family: 'Space Mono', monospace;
+    font-size: 13px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  .header-title span {
+    color: var(--text-muted);
+    margin: 0 6px;
+  }
+
+  /* ─── HUD Pills ───────────────────────────── */
+  .hud {
+    display: flex;
+    gap: 8px;
+  }
+
+  .hud-pill {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 14px;
+    min-width: 80px;
+  }
+
+  .hud-pill.roll { border-top: 2px solid var(--roll-color); }
+  .hud-pill.pitch { border-top: 2px solid var(--pitch-color); }
+  .hud-pill.yaw { border-top: 2px solid var(--yaw-color); }
+  .hud-pill.time { border-top: 2px solid var(--accent4); }
+
+  .hud-label {
+    font-family: 'Space Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 1px;
+  }
+
+  .hud-value {
+    font-family: 'Space Mono', monospace;
+    font-size: 15px;
+    font-weight: 700;
+  }
+
+  .hud-pill.roll .hud-value { color: var(--roll-color); }
+  .hud-pill.pitch .hud-value { color: var(--pitch-color); }
+  .hud-pill.yaw .hud-value { color: var(--yaw-color); }
+  .hud-pill.time .hud-value { color: var(--accent4); }
+
+  /* ─── Main Layout ─────────────────────────── */
+  .main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* ─── 3D Viewport ─────────────────────────── */
+  #viewport {
+    flex: 1;
+    position: relative;
+    background: var(--bg);
+  }
+
+  #viewport canvas {
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
+  }
+
+  .viewport-hint {
+    position: absolute;
+    bottom: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 1px;
+    pointer-events: none;
+  }
+
+  /* ─── Axis Legend ─────────────────────────── */
+  .axis-legend {
+    position: absolute;
+    top: 14px;
+    left: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .axis-item {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-muted);
+  }
+
+  .axis-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+  }
+
+  /* ─── Control Panel ───────────────────────── */
+  .panel {
+    width: 260px;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+  }
+
+  .panel-section {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .section-title {
+    font-family: 'Space Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .section-title.roll { color: var(--roll-color); }
+  .section-title.pitch { color: var(--pitch-color); }
+  .section-title.yaw { color: var(--yaw-color); }
+
+  /* ─── Sliders ─────────────────────────────── */
+  .control-row {
+    margin-bottom: 12px;
+  }
+
+  .control-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 5px;
+  }
+
+  .control-name {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 300;
+  }
+
+  .control-val {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text);
+    min-width: 40px;
+    text-align: right;
+  }
+
+  input[type=range] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 3px;
+    background: var(--border);
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+  }
+
+  input[type=range].roll-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--roll-color);
+    cursor: pointer;
+    box-shadow: 0 0 6px var(--roll-color);
+  }
+  input[type=range].pitch-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--pitch-color);
+    cursor: pointer;
+    box-shadow: 0 0 6px var(--pitch-color);
+  }
+  input[type=range].yaw-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--yaw-color);
+    cursor: pointer;
+    box-shadow: 0 0 6px var(--yaw-color);
+  }
+
+  input[type=range].roll-slider { accent-color: var(--roll-color); }
+  input[type=range].pitch-slider { accent-color: var(--pitch-color); }
+  input[type=range].yaw-slider { accent-color: var(--yaw-color); }
+
+  /* ─── Reset Button ────────────────────────── */
+  .reset-section {
+    padding: 14px 16px;
+    margin-top: auto;
+  }
+
+  .reset-btn {
+    width: 100%;
+    padding: 10px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-muted);
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .reset-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(88, 166, 255, 0.08);
+  }
+
+  /* ─── Scrollbar ───────────────────────────── */
+  .panel::-webkit-scrollbar { width: 4px; }
+  .panel::-webkit-scrollbar-track { background: transparent; }
+  .panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<header>
+  <div class="header-title">
+    3D <span>/</span> 자세 제어 시뮬레이션
+  </div>
+  <div class="hud">
+    <div class="hud-pill roll">
+      <div class="hud-label">Roll</div>
+      <div class="hud-value" id="hud-roll">0.0°</div>
+    </div>
+    <div class="hud-pill pitch">
+      <div class="hud-label">Pitch</div>
+      <div class="hud-value" id="hud-pitch">0.0°</div>
+    </div>
+    <div class="hud-pill yaw">
+      <div class="hud-label">Yaw</div>
+      <div class="hud-value" id="hud-yaw">0.0°</div>
+    </div>
+    <div class="hud-pill time">
+      <div class="hud-label">Time</div>
+      <div class="hud-value" id="hud-time">0.0s</div>
+    </div>
+  </div>
+</header>
+
+<!-- Main -->
+<div class="main">
+
+  <!-- 3D Viewport -->
+  <div id="viewport">
+    <div class="axis-legend">
+      <div class="axis-item"><div class="axis-dot" style="background:#ff4d4d;"></div>X축 (Pitch)</div>
+      <div class="axis-item"><div class="axis-dot" style="background:#4dff4d;"></div>Y축 (Yaw)</div>
+      <div class="axis-item"><div class="axis-dot" style="background:#4d88ff;"></div>Z축 (Roll)</div>
+    </div>
+    <div class="viewport-hint">드래그하여 시점 변경 · 스크롤하여 줌</div>
+  </div>
+
+  <!-- Control Panel -->
+  <div class="panel">
+
+    <!-- Roll -->
+    <div class="panel-section">
+      <div class="section-title roll">Roll · 롤</div>
+      <div class="control-row">
+        <div class="control-label">
+          <span class="control-name">진폭 (rad)</span>
+          <span class="control-val" id="val-rollAmp">0.50</span>
+        </div>
+        <input type="range" class="roll-slider" id="rollAmp" min="0" max="3.14" step="0.01" value="0.5">
+      </div>
+      <div class="control-row">
+        <div class="control-label">
+          <span class="control-name">주파수 (Hz)</span>
+          <span class="control-val" id="val-rollFreq">0.5</span>
+        </div>
+        <input type="range" class="roll-slider" id="rollFreq" min="0" max="2" step="0.1" value="0.5">
+      </div>
+    </div>
+
+    <!-- Pitch -->
+    <div class="panel-section">
+      <div class="section-title pitch">Pitch · 피치</div>
+      <div class="control-row">
+        <div class="control-label">
+          <span class="control-name">진폭 (rad)</span>
+          <span class="control-val" id="val-pitchAmp">0.50</span>
+        </div>
+        <input type="range" class="pitch-slider" id="pitchAmp" min="0" max="3.14" step="0.01" value="0.5">
+      </div>
+      <div class="control-row">
+        <div class="control-label">
+          <span class="control-name">주파수 (Hz)</span>
+          <span class="control-val" id="val-pitchFreq">0.5</span>
+        </div>
+        <input type="range" class="pitch-slider" id="pitchFreq" min="0" max="2" step="0.1" value="0.5">
+      </div>
+    </div>
+
+    <!-- Yaw -->
+    <div class="panel-section">
+      <div class="section-title yaw">Yaw · 요</div>
+      <div class="control-row">
+        <div class="control-label">
+          <span class="control-name">진폭 (rad)</span>
+          <span class="control-val" id="val-yawAmp">0.50</span>
+        </div>
+        <input type="range" class="yaw-slider" id="yawAmp" min="0" max="3.14" step="0.01" value="0.5">
+      </div>
+      <div class="control-row">
+        <div class="control-label">
+          <span class="control-name">주파수 (Hz)</span>
+          <span class="control-val" id="val-yawFreq">0.5</span>
+        </div>
+        <input type="range" class="yaw-slider" id="yawFreq" min="0" max="2" step="0.1" value="0.5">
+      </div>
+    </div>
+
+    <!-- Reset -->
+    <div class="reset-section">
+      <button class="reset-btn" id="resetBtn">↺ &nbsp;초기화</button>
+    </div>
+
+  </div>
+</div>
+
+<!-- Three.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ─── State ─────────────────────────────────────────────
+const params = {
+  rollAmp: 0.5, rollFreq: 0.5,
+  pitchAmp: 0.5, pitchFreq: 0.5,
+  yawAmp: 0.5, yawFreq: 0.5
+};
+let t = 0;
+
+// ─── Slider sync ───────────────────────────────────────
+const keys = ['rollAmp','rollFreq','pitchAmp','pitchFreq','yawAmp','yawFreq'];
+keys.forEach(k => {
+  const el = document.getElementById(k);
+  const valEl = document.getElementById('val-' + k);
+  el.addEventListener('input', () => {
+    params[k] = parseFloat(el.value);
+    valEl.textContent = parseFloat(el.value).toFixed(2);
+  });
+});
+
+document.getElementById('resetBtn').addEventListener('click', () => {
+  keys.forEach(k => {
+    const def = k.includes('Amp') ? 0.5 : 0.5;
+    params[k] = def;
+    document.getElementById(k).value = def;
+    document.getElementById('val-' + k).textContent = def.toFixed(2);
+  });
+  t = 0;
+});
+
+// ─── Three.js Setup ────────────────────────────────────
+const container = document.getElementById('viewport');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setClearColor(0x0a0c10);
+container.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+camera.position.set(4, 3, 5);
+camera.lookAt(0, 0, 0);
+
+// Resize
+function resize() {
+  const w = container.clientWidth, h = container.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ─── Lights ────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+dirLight.position.set(5, 10, 7);
+scene.add(dirLight);
+const fillLight = new THREE.DirectionalLight(0x88aaff, 0.3);
+fillLight.position.set(-5, -2, -3);
+scene.add(fillLight);
+
+// ─── Grid ──────────────────────────────────────────────
+const grid = new THREE.GridHelper(12, 12, 0x21262d, 0x161b22);
+grid.position.y = -2.5;
+scene.add(grid);
+
+// ─── Axes Helper ───────────────────────────────────────
+scene.add(new THREE.AxesHelper(3.5));
+
+// ─── Airplane ──────────────────────────────────────────
+const airplane = new THREE.Group();
+
+const mat = {
+  body:    new THREE.MeshPhongMaterial({ color: 0x58a6ff, shininess: 80 }),
+  wing:    new THREE.MeshPhongMaterial({ color: 0x3fb950, shininess: 60 }),
+  cockpit: new THREE.MeshPhongMaterial({ color: 0xd2a8ff, shininess: 120, transparent: true, opacity: 0.85 }),
+  engine:  new THREE.MeshPhongMaterial({ color: 0xf78166, shininess: 80 }),
+};
+
+// Fuselage
+const fuselage = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.35, 2.6), mat.body);
+airplane.add(fuselage);
+
+// Nose cone
+const noseGeom = new THREE.ConeGeometry(0.18, 0.6, 8);
+noseGeom.rotateX(Math.PI / 2);
+const nose = new THREE.Mesh(noseGeom, mat.body);
+nose.position.set(0, 0, 1.6);
+airplane.add(nose);
+
+// Main wings
+const wing = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.08, 0.7), mat.wing);
+wing.position.set(0, -0.05, 0.1);
+airplane.add(wing);
+
+// Wing taper (left)
+const wl = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.06, 0.4), mat.wing);
+wl.position.set(-1.7, -0.05, 0.3);
+airplane.add(wl);
+// Wing taper (right)
+const wr = wl.clone();
+wr.position.set(1.7, -0.05, 0.3);
+airplane.add(wr);
+
+// Horizontal stabilizer
+const hStab = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.06, 0.4), mat.wing);
+hStab.position.set(0, 0, -1.1);
+airplane.add(hStab);
+
+// Vertical stabilizer
+const vStab = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.55, 0.4), mat.wing);
+vStab.position.set(0, 0.35, -1.1);
+airplane.add(vStab);
+
+// Cockpit canopy
+const cockGeom = new THREE.SphereGeometry(0.18, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+const cockpit = new THREE.Mesh(cockGeom, mat.cockpit);
+cockpit.position.set(0, 0.22, 0.55);
+cockpit.scale.set(1.1, 1, 2.2);
+airplane.add(cockpit);
+
+// Engines (2)
+[-0.8, 0.8].forEach(x => {
+  const eng = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, 0.5, 8), mat.engine);
+  eng.rotation.x = Math.PI / 2;
+  eng.position.set(x, -0.15, 0.3);
+  airplane.add(eng);
+});
+
+scene.add(airplane);
+
+// ─── Orbit Controls (manual) ───────────────────────────
+let isDragging = false, prevX = 0, prevY = 0;
+let spherical = { theta: 0.8, phi: 0.7, radius: 8 };
+
+function updateCamera() {
+  camera.position.x = spherical.radius * Math.sin(spherical.phi) * Math.sin(spherical.theta);
+  camera.position.y = spherical.radius * Math.cos(spherical.phi);
+  camera.position.z = spherical.radius * Math.sin(spherical.phi) * Math.cos(spherical.theta);
+  camera.lookAt(0, 0, 0);
+}
+updateCamera();
+
+container.addEventListener('mousedown', e => { isDragging = true; prevX = e.clientX; prevY = e.clientY; });
+window.addEventListener('mouseup', () => isDragging = false);
+window.addEventListener('mousemove', e => {
+  if (!isDragging) return;
+  const dx = e.clientX - prevX, dy = e.clientY - prevY;
+  spherical.theta -= dx * 0.008;
+  spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi + dy * 0.008));
+  prevX = e.clientX; prevY = e.clientY;
+  updateCamera();
+});
+container.addEventListener('wheel', e => {
+  spherical.radius = Math.max(2, Math.min(20, spherical.radius + e.deltaY * 0.01));
+  updateCamera();
+  e.preventDefault();
+}, { passive: false });
+
+// Touch
+let prevTouch = null;
+container.addEventListener('touchstart', e => { prevTouch = e.touches[0]; }, { passive: true });
+container.addEventListener('touchmove', e => {
+  if (!prevTouch) return;
+  const dx = e.touches[0].clientX - prevTouch.clientX;
+  const dy = e.touches[0].clientY - prevTouch.clientY;
+  spherical.theta -= dx * 0.008;
+  spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi + dy * 0.008));
+  prevTouch = e.touches[0];
+  updateCamera();
+}, { passive: true });
+
+// ─── Render Loop ───────────────────────────────────────
+let lastTime = null;
+
+function toDeg(rad) { return (rad * 180 / Math.PI).toFixed(1); }
+
+function animate(timestamp) {
+  requestAnimationFrame(animate);
+  const dt = lastTime == null ? 0 : Math.min((timestamp - lastTime) / 1000, 0.05);
+  lastTime = timestamp;
+  t += dt;
+
+  const roll  = params.rollAmp  * Math.sin(2 * Math.PI * params.rollFreq  * t);
+  const pitch = params.pitchAmp * Math.cos(2 * Math.PI * params.pitchFreq * t);
+  const yaw   = params.yawAmp   * Math.sin(2 * Math.PI * params.yawFreq   * t);
+
+  airplane.rotation.set(pitch, yaw, roll);
+
+  document.getElementById('hud-roll').textContent  = toDeg(roll)  + '°';
+  document.getElementById('hud-pitch').textContent = toDeg(pitch) + '°';
+  document.getElementById('hud-yaw').textContent   = toDeg(yaw)   + '°';
+  document.getElementById('hud-time').textContent  = t.toFixed(1) + 's';
+
+  renderer.render(scene, camera);
+}
+
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
