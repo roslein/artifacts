@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Feature Matching Simulator</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Space+Grotesk:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:          #0d0f14;
+    --surface:     #13161d;
+    --panel:       #1a1e28;
+    --border:      #2a2f3d;
+    --primary:     #4af0c4;
+    --primary-dim: rgba(74,240,196,0.15);
+    --positive:    #5be49b;
+    --outline:     #3e4559;
+    --text:        #c9d0e0;
+    --text-muted:  #5a6380;
+    --mono:        'JetBrains Mono', monospace;
+    --sans:        'Space Grotesk', sans-serif;
+  }
+
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+  }
+
+  /* ─── Layout ──────────────────────────────────── */
+  #app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    padding: 0;
+  }
+
+  /* ─── Header ──────────────────────────────────── */
+  #header {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 12px 20px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+
+  #app-title {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--primary);
+    white-space: nowrap;
+  }
+
+  #hud {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .hud-pill {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 10px;
+  }
+
+  .hud-label {
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .hud-value {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  #status-bar {
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--primary);
+    opacity: 0.85;
+    white-space: nowrap;
+  }
+
+  /* ─── Canvas ──────────────────────────────────── */
+  #canvas-wrap {
+    flex: 1 1 auto;
+    position: relative;
+    overflow: hidden;
+    background: var(--bg);
+  }
+
+  canvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    display: block;
+    cursor: default;
+  }
+
+  /* Progress overlay */
+  #progress-label {
+    position: absolute;
+    bottom: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--primary);
+    background: rgba(13,15,20,0.75);
+    padding: 4px 12px;
+    border-radius: 3px;
+    border: 1px solid var(--primary-dim);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+
+  /* Zone labels */
+  .zone-label {
+    position: absolute;
+    top: 14px;
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    pointer-events: none;
+  }
+  #label-query { left: 5%; }
+  #label-db    { left: 62%; }
+
+  /* ─── Controls ────────────────────────────────── */
+  #controls {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 10px 20px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+
+  .ctrl-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .ctrl-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  /* Toggle */
+  .toggle-wrap { cursor: pointer; display: flex; align-items: center; gap: 8px; }
+  .toggle-track {
+    width: 36px; height: 18px;
+    background: var(--border);
+    border-radius: 9px;
+    position: relative;
+    transition: background 0.2s;
+  }
+  .toggle-track.on { background: var(--primary); }
+  .toggle-knob {
+    position: absolute;
+    top: 2px; left: 2px;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: #fff;
+    transition: left 0.2s;
+  }
+  .toggle-track.on .toggle-knob { left: 20px; }
+
+  /* Slider */
+  input[type=range] {
+    -webkit-appearance: none;
+    width: 110px; height: 4px;
+    border-radius: 2px;
+    background: var(--border);
+    outline: none;
+    cursor: pointer;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--primary);
+    cursor: pointer;
+    transition: transform 0.1s;
+  }
+  input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.2); }
+
+  .slider-val {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--primary);
+    min-width: 20px;
+    text-align: right;
+  }
+
+  /* Button */
+  button {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--text);
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 6px 14px;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  button:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- Header -->
+  <div id="header">
+    <span id="app-title">Feature Matching Simulator</span>
+    <div id="hud">
+      <div class="hud-pill">
+        <span class="hud-label">Total Operations</span>
+        <span class="hud-value" id="hud-ops">0</span>
+      </div>
+      <div class="hud-pill">
+        <span class="hud-label">Search Type</span>
+        <span class="hud-value" id="hud-type">Brute Force (N:N)</span>
+      </div>
+    </div>
+    <span id="status-bar">Click a Query Point (Target) to start searching.</span>
+  </div>
+
+  <!-- Canvas -->
+  <div id="canvas-wrap">
+    <canvas id="viz"></canvas>
+    <div class="zone-label" id="label-query">Query Image</div>
+    <div class="zone-label" id="label-db">Database</div>
+    <div id="progress-label"></div>
+  </div>
+
+  <!-- Controls -->
+  <div id="controls">
+    <div class="ctrl-row">
+      <span class="ctrl-label">Show Operation Web</span>
+      <div class="toggle-wrap" id="toggle-web">
+        <div class="toggle-track" id="toggle-track">
+          <div class="toggle-knob"></div>
+        </div>
+      </div>
+    </div>
+    <div class="ctrl-row">
+      <span class="ctrl-label">Search Speed</span>
+      <input type="range" id="speed-slider" min="1" max="20" value="5">
+      <span class="slider-val" id="speed-val">5</span>
+    </div>
+    <div class="ctrl-row">
+      <button id="reset-btn">Reset Scene</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function () {
+  // ─── State ───────────────────────────────────────
+  const S = {
+    queryPoints:  [],
+    dbPoints:     [],
+    activeSearch: null,   // { queryIdx, dbIdx, minDistance, bestDbIdx, totalOps, subFrame }
+    matches:      new Map(),
+    totalCalcs:   0,
+    showWeb:      false,
+    animSpeed:    5,
+  };
+
+  // ─── DOM refs ────────────────────────────────────
+  const canvas   = document.getElementById('viz');
+  const ctx      = canvas.getContext('2d');
+  const hudOps   = document.getElementById('hud-ops');
+  const statusEl = document.getElementById('status-bar');
+  const progEl   = document.getElementById('progress-label');
+  const toggleTr = document.getElementById('toggle-track');
+  const speedSl  = document.getElementById('speed-slider');
+  const speedVal = document.getElementById('speed-val');
+
+  // ─── Resize ──────────────────────────────────────
+  const wrap = document.getElementById('canvas-wrap');
+  function resize() {
+    canvas.width  = wrap.clientWidth  * devicePixelRatio;
+    canvas.height = wrap.clientHeight * devicePixelRatio;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // ─── Colors ──────────────────────────────────────
+  const C = {
+    primary:  '#4af0c4',
+    positive: '#5be49b',
+    outline:  '#3e4559',
+    text:     '#c9d0e0',
+    textMuted:'#5a6380',
+    web:      'rgba(90,99,128,0.12)',
+    bg:       '#0d0f14',
+  };
+
+  // ─── Reset ───────────────────────────────────────
+  function reset() {
+    S.queryPoints  = [];
+    S.dbPoints     = [];
+    S.matches      = new Map();
+    S.activeSearch = null;
+    S.totalCalcs   = 0;
+    hudOps.textContent = '0';
+    setStatus('Click a Query Point (Target) to start searching.');
+    progEl.style.opacity = '0';
+
+    for (let i = 0; i < 5; i++) {
+      S.queryPoints.push({
+        x: 0.12 + Math.random() * 0.08,
+        y: 0.15 + i * 0.155 + Math.random() * 0.04,
+      });
+    }
+    for (let i = 0; i < 20; i++) {
+      S.dbPoints.push({
+        x: 0.55 + Math.random() * 0.38,
+        y: 0.08 + Math.random() * 0.84,
+      });
+    }
+  }
+
+  function setStatus(msg) {
+    statusEl.textContent = msg;
+  }
+
+  function startSearch(idx) {
+    if (S.activeSearch) return;
+    S.activeSearch = {
+      queryIdx:    idx,
+      dbIdx:       0,
+      minDistance: Infinity,
+      bestDbIdx:   -1,
+      totalOps:    0,
+      subFrame:    0,
+    };
+    setStatus('Searching...');
+    progEl.style.opacity = '1';
+  }
+
+  // ─── Controls ────────────────────────────────────
+  document.getElementById('toggle-web').addEventListener('click', () => {
+    S.showWeb = !S.showWeb;
+    toggleTr.classList.toggle('on', S.showWeb);
+  });
+
+  speedSl.addEventListener('input', () => {
+    S.animSpeed = +speedSl.value;
+    speedVal.textContent = speedSl.value;
+  });
+
+  document.getElementById('reset-btn').addEventListener('click', reset);
+
+  // ─── Pointer ─────────────────────────────────────
+  let justPressed = false;
+  let pointerX = 0, pointerY = 0;
+
+  canvas.addEventListener('pointerdown', (e) => {
+    const r = canvas.getBoundingClientRect();
+    pointerX = (e.clientX - r.left) / r.width;
+    pointerY = (e.clientY - r.top)  / r.height;
+    justPressed = true;
+  });
+
+  // ─── Draw helpers ────────────────────────────────
+  function toScreen(nx, ny) {
+    return [nx * canvas.width, ny * canvas.height];
+  }
+
+  function drawCircle(nx, ny, r, fill, stroke, lineW) {
+    const [x, y] = toScreen(nx, ny);
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    if (fill)   { ctx.fillStyle = fill; ctx.fill(); }
+    if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lineW || 2; ctx.stroke(); }
+  }
+
+  function drawLine(nx1, ny1, nx2, ny2, color, width, dash) {
+    const [x1, y1] = toScreen(nx1, ny1);
+    const [x2, y2] = toScreen(nx2, ny2);
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    if (dash) ctx.setLineDash(dash); else ctx.setLineDash([]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // ─── Scan line animation ─────────────────────────
+  let scanAngle = 0;
+
+  // ─── Main loop ───────────────────────────────────
+  let last = performance.now();
+
+  function frame(now) {
+    const dt = Math.min((now - last) / 1000, 0.05);
+    last = now;
+    const W = canvas.width, H = canvas.height;
+    const dpr = devicePixelRatio;
+    const minDim = Math.min(W, H);
+
+    // Clear
+    ctx.clearRect(0, 0, W, H);
+
+    // ── Pointer interaction ──
+    if (justPressed && !S.activeSearch) {
+      S.queryPoints.forEach((p, i) => {
+        const dx = pointerX - p.x;
+        const dy = pointerY - p.y;
+        const threshold = 0.045;
+        if (Math.hypot(dx, dy * (W/H)) < threshold) startSearch(i);
+      });
+    }
+    justPressed = false;
+
+    // ── Update search ──
+    if (S.activeSearch) {
+      const s = S.activeSearch;
+      s.subFrame += dt * S.animSpeed * 10;
+
+      if (s.subFrame >= 1) {
+        s.subFrame = 0;
+        const q = S.queryPoints[s.queryIdx];
+        const d = S.dbPoints[s.dbIdx];
+        const dist = Math.hypot(q.x - d.x, q.y - d.y);
+        if (dist < s.minDistance) {
+          s.minDistance = dist;
+          s.bestDbIdx   = s.dbIdx;
+        }
+        s.dbIdx++;
+        S.totalCalcs++;
+        s.totalOps++;
+        hudOps.textContent = S.totalCalcs;
+
+        if (s.dbIdx >= S.dbPoints.length) {
+          S.matches.set(s.queryIdx, s.bestDbIdx);
+          setStatus(`Match Found! (${s.totalOps} of ${S.dbPoints.length} comparisons)`);
+          S.activeSearch   = null;
+          progEl.style.opacity = '0';
+        } else {
+          progEl.textContent = `Checking Point ${s.dbIdx + 1} / ${S.dbPoints.length}`;
+        }
+      }
+    }
+
+    // ── Draw Web ──
+    if (S.showWeb) {
+      S.queryPoints.forEach(q => {
+        S.dbPoints.forEach(d => {
+          drawLine(q.x, q.y, d.x, d.y, C.web, 1 * dpr);
+        });
+      });
+    }
+
+    // ── Draw permanent matches ──
+    S.matches.forEach((dbIdx, qIdx) => {
+      const q = S.queryPoints[qIdx];
+      const d = S.dbPoints[dbIdx];
+      // Glow
+      ctx.save();
+      ctx.globalAlpha = 0.25;
+      drawLine(q.x, q.y, d.x, d.y, C.positive, 8 * dpr);
+      ctx.restore();
+      drawLine(q.x, q.y, d.x, d.y, C.positive, 2.5 * dpr, [6 * dpr, 5 * dpr]);
+    });
+
+    // ── Draw active search line ──
+    if (S.activeSearch) {
+      const s = S.activeSearch;
+      const q = S.queryPoints[s.queryIdx];
+      const dIdx = Math.min(s.dbIdx, S.dbPoints.length - 1);
+      const d = S.dbPoints[dIdx];
+
+      // Pulse glow
+      const pulse = 0.4 + 0.6 * Math.abs(Math.sin(now * 0.006));
+      ctx.save();
+      ctx.globalAlpha = pulse * 0.35;
+      drawLine(q.x, q.y, d.x, d.y, C.primary, 10 * dpr);
+      ctx.restore();
+      drawLine(q.x, q.y, d.x, d.y, C.primary, 2.5 * dpr);
+
+      // Best-so-far line
+      if (s.bestDbIdx >= 0) {
+        const best = S.dbPoints[s.bestDbIdx];
+        ctx.save();
+        ctx.globalAlpha = 0.4;
+        drawLine(q.x, q.y, best.x, best.y, C.positive, 2 * dpr, [4 * dpr, 4 * dpr]);
+        ctx.restore();
+      }
+    }
+
+    // ── Draw DB points ──
+    const dR = minDim * 0.012;
+    S.dbPoints.forEach((p, i) => {
+      const isActive = S.activeSearch && S.activeSearch.dbIdx === i;
+      const isBest   = S.activeSearch && S.activeSearch.bestDbIdx === i;
+
+      if (isActive) {
+        // Outer ring pulse
+        const pulse = 0.5 + 0.5 * Math.abs(Math.sin(now * 0.008));
+        ctx.save();
+        ctx.globalAlpha = pulse * 0.4;
+        drawCircle(p.x, p.y, dR * 2.8, null, C.primary, 1.5 * dpr);
+        ctx.restore();
+        drawCircle(p.x, p.y, dR, C.primary, null);
+      } else if (isBest) {
+        drawCircle(p.x, p.y, dR, null, C.positive, 2 * dpr);
+        drawCircle(p.x, p.y, dR * 0.5, C.positive, null);
+      } else {
+        drawCircle(p.x, p.y, dR, null, C.outline, 1.5 * dpr);
+        drawCircle(p.x, p.y, dR * 0.3, C.outline, null);
+      }
+    });
+
+    // ── Draw matched DB points (filled green) ──
+    S.matches.forEach((dbIdx) => {
+      const p = S.dbPoints[dbIdx];
+      drawCircle(p.x, p.y, dR * 1.1, C.positive, null);
+    });
+
+    // ── Draw Query points ──
+    const qR = minDim * 0.022;
+    S.queryPoints.forEach((p, i) => {
+      const isTarget = S.activeSearch && S.activeSearch.queryIdx === i;
+      const isMatched = S.matches.has(i);
+      const color = isTarget ? C.primary : isMatched ? C.positive : C.text;
+
+      if (isTarget) {
+        // Rotating ring
+        scanAngle += dt * 3;
+        ctx.save();
+        const [sx, sy] = toScreen(p.x, p.y);
+        ctx.translate(sx, sy);
+        ctx.rotate(scanAngle);
+        ctx.beginPath();
+        for (let a = 0; a < Math.PI * 2; a += Math.PI / 3) {
+          const r1 = qR * 1.7, r2 = qR * 2.1;
+          ctx.moveTo(Math.cos(a) * r1, Math.sin(a) * r1);
+          ctx.lineTo(Math.cos(a) * r2, Math.sin(a) * r2);
+        }
+        ctx.strokeStyle = C.primary;
+        ctx.lineWidth = 2 * dpr;
+        ctx.globalAlpha = 0.7;
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // Outer ring
+      drawCircle(p.x, p.y, qR, null, color, 2.5 * dpr);
+      // Inner dot
+      drawCircle(p.x, p.y, qR * 0.35, color, null);
+
+      // Label
+      if (isTarget) {
+        const [sx, sy] = toScreen(p.x, p.y);
+        ctx.fillStyle = C.primary;
+        ctx.font = `${Math.round(10 * dpr)}px JetBrains Mono`;
+        ctx.letterSpacing = '1px';
+        ctx.fillText('SEARCHING', sx + qR + 6 * dpr, sy + 4 * dpr);
+      }
+    });
+
+    // ── Divider line ──
+    ctx.beginPath();
+    ctx.moveTo(W * 0.48, H * 0.05);
+    ctx.lineTo(W * 0.48, H * 0.95);
+    ctx.strokeStyle = C.outline;
+    ctx.lineWidth = 1 * dpr;
+    ctx.setLineDash([4 * dpr, 6 * dpr]);
+    ctx.globalAlpha = 0.4;
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+
+    requestAnimationFrame(frame);
+  }
+
+  // ─── Boot ────────────────────────────────────────
+  reset();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
