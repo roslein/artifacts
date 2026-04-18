@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Camera Intrinsic Matrix Visualizer</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #f5f4f1; --bg2: #ebebea; --border: rgba(0,0,0,0.12);
+    --text: #1a1a1a; --text2: #555; --text3: #999;
+    --mono: 'SF Mono', 'Roboto Mono', monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1e1e20; --bg2: #2a2a2d; --border: rgba(255,255,255,0.1);
+      --text: #e8e8e8; --text2: #aaa; --text3: #666;
+    }
+  }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+         background: var(--bg); color: var(--text); padding: 20px;
+         max-width: 800px; margin: 0 auto; }
+  h1 { font-size: 17px; font-weight: 500; margin-bottom: 16px; }
+  .canvas-wrap { width: 100%; border: 0.5px solid var(--border);
+                 border-radius: 12px; overflow: hidden; background: var(--bg2); }
+  canvas { display: block; width: 100%; }
+  .hud { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
+  .pill { background: var(--bg2); border: 0.5px solid var(--border);
+          border-radius: 8px; padding: 6px 12px; font-size: 12px; }
+  .pill-label { color: var(--text3); text-transform: uppercase;
+                letter-spacing: 0.06em; font-size: 11px; }
+  .pill-val { color: var(--text); font-family: var(--mono);
+              font-weight: 500; margin-left: 4px; }
+  .math-box { margin-top: 10px; background: var(--bg2); border-radius: 8px;
+              padding: 12px 16px; font-size: 13px; font-family: var(--mono);
+              overflow-x: auto; color: var(--text); line-height: 2.2; }
+  .controls { display: grid; grid-template-columns: 1fr 1fr;
+              gap: 12px 24px; margin-top: 14px; }
+  .ctrl { display: flex; flex-direction: column; gap: 4px; }
+  .ctrl label { font-size: 13px; color: var(--text2);
+                display: flex; justify-content: space-between; }
+  .ctrl label span { font-family: var(--mono); font-weight: 500; color: var(--text); }
+  input[type=range] { width: 100%; accent-color: #3266ad; }
+  .btn-row { margin-top: 12px; }
+  button { font-size: 13px; padding: 7px 16px; border: 0.5px solid var(--border);
+           border-radius: 8px; background: transparent; color: var(--text); cursor: pointer; }
+  button:hover { background: var(--bg2); }
+</style>
+</head>
+<body>
+<h1>Camera Intrinsic Matrix Visualizer</h1>
+
+<div class="canvas-wrap">
+  <canvas id="ciCanvas"></canvas>
+</div>
+
+<div class="hud">
+  <div class="pill"><span class="pill-label">Principal point</span><span class="pill-val" id="hudPP">(400, 300)</span></div>
+  <div class="pill"><span class="pill-label">Aspect ratio</span><span class="pill-val" id="hudAR">1.00</span></div>
+  <div class="pill"><span class="pill-label">Skew</span><span class="pill-val" id="hudSK">0.0</span></div>
+  <div class="pill"><span class="pill-label">Skew angle</span><span class="pill-val" id="hudSA">0.000 rad</span></div>
+</div>
+
+<div class="math-box" id="ciMath"></div>
+
+<div class="controls">
+  <div class="ctrl">
+    <label>fx (focal X)<span id="vFx">400</span></label>
+    <input type="range" id="sFx" min="100" max="1000" step="1" value="400">
+  </div>
+  <div class="ctrl">
+    <label>fy (focal Y)<span id="vFy">400</span></label>
+    <input type="range" id="sFy" min="100" max="1000" step="1" value="400">
+  </div>
+  <div class="ctrl">
+    <label>s (skew)<span id="vS">0</span></label>
+    <input type="range" id="sS" min="-200" max="200" step="1" value="0">
+  </div>
+  <div class="ctrl">
+    <label>cx (principal X)<span id="vCx">400</span></label>
+    <input type="range" id="sCx" min="0" max="800" step="1" value="400">
+  </div>
+  <div class="ctrl">
+    <label>cy (principal Y)<span id="vCy">300</span></label>
+    <input type="range" id="sCy" min="0" max="800" step="1" value="300">
+  </div>
+</div>
+<div class="btn-row">
+  <button onclick="resetParams()">Reset parameters</button>
+</div>
+
+<script>
+const canvas = document.getElementById('ciCanvas');
+const ctx = canvas.getContext('2d');
+const GRID = 10;
+const state = { fx: 400, fy: 400, s: 0, cx: 400, cy: 300 };
+
+function isDark() { return matchMedia('(prefers-color-scheme: dark)').matches; }
+
+function resize() {
+  const W = canvas.parentElement.clientWidth;
+  const H = Math.round(W * 0.52);
+  canvas.width = W; canvas.height = H;
+  draw();
+}
+
+function project(nx, ny, W, H) {
+  return {
+    u: (state.fx * nx + state.s * ny + state.cx) * (W / 800),
+    v: (state.fy * ny + state.cy) * (H / 600)
+  };
+}
+
+function draw() {
+  const W = canvas.width, H = canvas.height;
+  const dk = isDark();
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = dk ? '#1e1e20' : '#f0efec';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.strokeStyle = dk ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.07)';
+  ctx.setLineDash([4,4]); ctx.lineWidth = 1;
+  ctx.strokeRect(12, 12, W-24, H-24);
+  ctx.setLineDash([]);
+
+  ctx.strokeStyle = dk ? 'rgba(100,160,240,0.65)' : 'rgba(50,102,173,0.6)';
+  ctx.lineWidth = 1.5;
+  for (let i = 0; i <= GRID; i++) {
+    ctx.beginPath();
+    for (let j = 0; j <= GRID; j++) {
+      const { u, v } = project(i/GRID - 0.5, j/GRID - 0.5, W, H);
+      j === 0 ? ctx.moveTo(u, v) : ctx.lineTo(u, v);
+    }
+    ctx.stroke();
+  }
+  for (let j = 0; j <= GRID; j++) {
+    ctx.beginPath();
+    for (let i = 0; i <= GRID; i++) {
+      const { u, v } = project(i/GRID - 0.5, j/GRID - 0.5, W, H);
+      i === 0 ? ctx.moveTo(u, v) : ctx.lineTo(u, v);
+    }
+    ctx.stroke();
+  }
+
+  const scaleX = W/800, scaleY = H/600;
+  const ppX = state.cx * scaleX, ppY = state.cy * scaleY;
+  const hs = 10;
+  ctx.strokeStyle = dk ? '#f06060' : '#c0392b';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(ppX - hs, ppY); ctx.lineTo(ppX + hs, ppY);
+  ctx.moveTo(ppX, ppY - hs); ctx.lineTo(ppX, ppY + hs);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(ppX, ppY, 4, 0, Math.PI*2);
+  ctx.fillStyle = dk ? '#f06060' : '#c0392b';
+  ctx.fill();
+  ctx.font = '12px monospace';
+  ctx.fillStyle = dk ? '#f06060' : '#c0392b';
+  ctx.fillText('(' + state.cx + ', ' + state.cy + ')', ppX + 10, ppY - 8);
+
+  if (Math.abs(state.s) > 5) {
+    const t0 = project(0, -0.5, W, H);
+    const t1 = project(0,  0.5, W, H);
+    ctx.setLineDash([2,3]);
+    ctx.strokeStyle = dk ? '#e8a840' : '#a05a2c';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(state.cx * scaleX, t0.v);
+    ctx.lineTo(state.cx * scaleX, t1.v);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = dk ? '#e8a840' : '#a05a2c';
+    ctx.fillText('shear ' + Math.atan2(state.s, state.fy).toFixed(3) + ' rad',
+      (t0.u + t1.u)/2 + 4, (t0.v + t1.v)/2);
+  }
+
+  [[-0.5,-0.5],[0.5,-0.5],[0.5,0.5],[-0.5,0.5]].forEach(([nx,ny]) => {
+    const { u, v } = project(nx, ny, W, H);
+    ctx.beginPath();
+    ctx.arc(u, v, 3, 0, Math.PI*2);
+    ctx.fillStyle = dk ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.35)';
+    ctx.fill();
+  });
+}
+
+function updateMath() {
+  const { fx, fy, s, cx, cy } = state;
+  const c = { fx:'#3266ad', fy:'#2e8c5a', s:'#a05a2c', cx:'#8b3ab8', cy:'#b03060' };
+  const cell = (v, col) =>
+    '<span style="color:' + col + ';min-width:36px;display:inline-block;text-align:right">' + v + '</span>';
+  const z = '<span style="opacity:0.4;min-width:36px;display:inline-block;text-align:right">0</span>';
+  const one = '<span style="opacity:0.4;min-width:36px;display:inline-block;text-align:right">1</span>';
+  document.getElementById('ciMath').innerHTML =
+    '<span style="opacity:0.6">K =</span> ' +
+    '<span style="font-size:28px;font-weight:200;opacity:0.5;line-height:1">[</span>' +
+    '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0 16px;text-align:right;display:inline-grid">' +
+      cell(fx,c.fx) + cell(s,c.s)  + cell(cx,c.cx) +
+      z             + cell(fy,c.fy)+ cell(cy,c.cy) +
+      z             + z             + one +
+    '</div>' +
+    '<span style="font-size:28px;font-weight:200;opacity:0.5;line-height:1">]</span>' +
+    '&nbsp;&nbsp;<span style="opacity:0.45;font-size:12px">' +
+    'u = <span style="color:#3266ad">fx</span>·X/Z + <span style="color:#a05a2c">s</span>·Y/Z + <span style="color:#8b3ab8">cx</span>' +
+    ' &nbsp;|&nbsp; ' +
+    'v = <span style="color:#2e8c5a">fy</span>·Y/Z + <span style="color:#b03060">cy</span></span>';
+}
+
+function updateHUD() {
+  document.getElementById('hudPP').textContent = '(' + state.cx + ', ' + state.cy + ')';
+  document.getElementById('hudAR').textContent = (state.fx / state.fy).toFixed(2);
+  document.getElementById('hudSK').textContent = state.s.toFixed(1);
+  document.getElementById('hudSA').textContent = Math.atan2(state.s, state.fy).toFixed(3) + ' rad';
+}
+
+function update() { draw(); updateMath(); updateHUD(); }
+
+function bind(sid, vid, key) {
+  const sl = document.getElementById(sid), vl = document.getElementById(vid);
+  sl.addEventListener('input', () => { state[key] = +sl.value; vl.textContent = sl.value; update(); });
+}
+bind('sFx','vFx','fx'); bind('sFy','vFy','fy'); bind('sS','vS','s');
+bind('sCx','vCx','cx'); bind('sCy','vCy','cy');
+
+function resetParams() {
+  Object.assign(state, { fx:400, fy:400, s:0, cx:400, cy:300 });
+  [['sFx','vFx',400],['sFy','vFy',400],['sS','vS',0],['sCx','vCx',400],['sCy','vCy',300]]
+    .forEach(([sid,vid,v]) => {
+      document.getElementById(sid).value = v;
+      document.getElementById(vid).textContent = v;
+    });
+  update();
+}
+
+window.addEventListener('resize', resize);
+resize(); update();
+</script>
+</body>
+</html>
