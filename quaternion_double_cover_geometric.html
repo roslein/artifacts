@@ -1,76 +1,137 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quaternion Double Cover</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #1a1b26; color: #c8d4f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 20px; }
 
-<h2 class="sr-only">Quaternion Double Cover: S³에서 SO(3)로의 2:1 매핑을 기하학적으로 보여주는 인터랙티브 시각화</h2>
+.wrap { max-width: 860px; margin: 0 auto; }
 
-<div style="padding: 1rem 0; font-family: var(--font-sans);">
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
 
-<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
-  <div>
-    <p style="font-size: 13px; color: var(--color-text-secondary); margin: 0 0 6px;">S³ 위의 단위 쿼터니언</p>
-    <canvas id="s3canvas" width="310" height="310" style="border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-lg); display: block; cursor: grab; width: 100%;"></canvas>
-    <p style="font-size: 12px; color: var(--color-text-secondary); margin: 6px 0 0; text-align: center;">드래그하여 회전</p>
-  </div>
-  <div>
-    <p style="font-size: 13px; color: var(--color-text-secondary); margin: 0 0 6px;">3D 공간에서의 실제 회전 결과</p>
-    <canvas id="so3canvas" width="310" height="310" style="border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-lg); display: block; width: 100%;"></canvas>
-    <p style="font-size: 12px; color: var(--color-text-secondary); margin: 6px 0 0; text-align: center;">두 쿼터니언 모두 동일한 자세</p>
-  </div>
-</div>
+canvas {
+  background: #0f1117;
+  border: 1px solid #2e3354;
+  border-radius: 10px;
+  display: block;
+  width: 100%;
+  cursor: grab;
+}
 
-<div style="border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-lg); padding: 14px 16px; margin-bottom: 16px;">
-  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+.canvas-label { font-size: 12px; color: #8b96b8; margin: 0 0 5px; }
+.canvas-hint  { font-size: 11px; color: #4a5270; margin: 5px 0 0; text-align: center; }
+
+.panel {
+  border: 1px solid #2e3354;
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+}
+
+.controls-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+
+label { font-size: 12px; color: #8b96b8; }
+
+input[type=range] { accent-color: #7eb8f7; }
+
+.qval-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+.card-q {
+  background: #0d1f3c;
+  border: 1px solid #1e3a6e;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.card-negq {
+  background: #2a0f0f;
+  border: 1px solid #5a1a1a;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.card-tag { font-size: 11px; font-weight: 600; margin: 0 0 3px; }
+.card-q   .card-tag { color: #7eb8f7; }
+.card-negq .card-tag { color: #f77e7e; }
+.card-val { font-size: 12px; font-family: monospace; color: #c8d4f0; margin: 0; }
+
+.bar-section { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.bar-label { font-size: 11px; color: #8b96b8; margin: 0 0 4px; }
+.bar-track { background: #2a2d3e; border-radius: 4px; height: 8px; overflow: hidden; margin-bottom: 4px; }
+.bar-val { font-size: 11px; font-family: monospace; margin: 0; }
+.bar-val-wrong { color: #f77e7e; }
+.bar-val-right { color: #5dcaa5; }
+
+.section-title { font-size: 12px; color: #8b96b8; font-weight: 500; margin: 0 0 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="grid2">
     <div>
-      <p style="font-size: 12px; color: var(--color-text-secondary); margin: 0 0 4px;">회전축</p>
-      <div style="display: flex; gap: 8px; align-items: center;">
-        <label style="font-size: 12px; color: var(--color-text-secondary);">X</label>
-        <input type="range" id="ax" min="-1" max="1" step="0.05" value="0.577" style="flex:1;">
-        <label style="font-size: 12px; color: var(--color-text-secondary);">Y</label>
-        <input type="range" id="ay" min="-1" max="1" step="0.05" value="0.577" style="flex:1;">
-        <label style="font-size: 12px; color: var(--color-text-secondary);">Z</label>
-        <input type="range" id="az" min="-1" max="1" step="0.05" value="0.577" style="flex:1;">
+      <p class="canvas-label">S³ 위의 단위 쿼터니언</p>
+      <canvas id="s3canvas" width="620" height="620"></canvas>
+      <p class="canvas-hint">드래그하여 회전</p>
+    </div>
+    <div>
+      <p class="canvas-label">3D 공간에서의 실제 회전 결과</p>
+      <canvas id="so3canvas" width="620" height="620"></canvas>
+      <p class="canvas-hint">두 쿼터니언 모두 동일한 자세</p>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="controls-grid">
+      <div>
+        <p class="canvas-label" style="margin-bottom:6px;">회전축</p>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <label>X</label>
+          <input type="range" id="ax" min="-1" max="1" step="0.05" value="0.577" style="flex:1;">
+          <label>Y</label>
+          <input type="range" id="ay" min="-1" max="1" step="0.05" value="0.577" style="flex:1;">
+          <label>Z</label>
+          <input type="range" id="az" min="-1" max="1" step="0.05" value="0.577" style="flex:1;">
+        </div>
+      </div>
+      <div>
+        <p class="canvas-label" style="margin-bottom:6px;">회전 각도: <span id="angleval" style="color:#c8d4f0;">120</span>°</p>
+        <input type="range" id="angle" min="0" max="360" value="120" style="width:100%;">
       </div>
     </div>
-    <div>
-      <p style="font-size: 12px; color: var(--color-text-secondary); margin: 0 0 4px;">회전 각도: <span id="angleval">120</span>°</p>
-      <input type="range" id="angle" min="0" max="360" value="120" style="width: 100%;">
+    <div class="qval-grid">
+      <div class="card-q">
+        <p class="card-tag">q (앞면)</p>
+        <p class="card-val" id="qval">—</p>
+      </div>
+      <div class="card-negq">
+        <p class="card-tag">−q (대척점)</p>
+        <p class="card-val" id="negqval">—</p>
+      </div>
     </div>
   </div>
 
-  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-    <div style="background: var(--color-background-info); border-radius: var(--border-radius-md); padding: 10px 12px;">
-      <p style="font-size: 11px; color: var(--color-text-info); margin: 0 0 3px; font-weight: 500;">q (앞면)</p>
-      <p style="font-size: 12px; font-family: var(--font-mono); color: var(--color-text-primary); margin: 0;" id="qval">—</p>
-    </div>
-    <div style="background: var(--color-background-danger); border-radius: var(--border-radius-md); padding: 10px 12px;">
-      <p style="font-size: 11px; color: var(--color-text-danger); margin: 0 0 3px; font-weight: 500;">−q (대척점)</p>
-      <p style="font-size: 12px; font-family: var(--font-mono); color: var(--color-text-primary); margin: 0;" id="negqval">—</p>
+  <div class="panel">
+    <p class="section-title">내적 유사도 비교</p>
+    <div class="bar-section">
+      <div>
+        <p class="bar-label">단순 차이 (틀린 방법)</p>
+        <div class="bar-track"><div id="wrongbar" style="height:100%; background:#c0392b; width:100%;"></div></div>
+        <p class="bar-val bar-val-wrong" id="wrongval">오차 커 보임</p>
+      </div>
+      <div>
+        <p class="bar-label">|내적| (올바른 방법)</p>
+        <div class="bar-track"><div id="rightbar" style="height:100%; background:#1d9e75; width:100%;"></div></div>
+        <p class="bar-val bar-val-right" id="rightval">|q·(−q)| = 1.000</p>
+      </div>
     </div>
   </div>
-</div>
-
-<div style="border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-lg); padding: 12px 16px;">
-  <p style="font-size: 12px; color: var(--color-text-secondary); margin: 0 0 8px; font-weight: 500;">내적 유사도 비교</p>
-  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-    <div>
-      <p style="font-size: 11px; color: var(--color-text-secondary); margin: 0 0 4px;">단순 차이 (틀린 방법)</p>
-      <div style="height: 8px; background: var(--color-background-secondary); border-radius: 4px; overflow: hidden;">
-        <div id="wrongbar" style="height: 100%; background: #E24B4A; transition: width 0.3s; width: 100%;"></div>
-      </div>
-      <p style="font-size: 11px; font-family: var(--font-mono); color: var(--color-text-secondary); margin: 4px 0 0;" id="wrongval">오차 커 보임</p>
-    </div>
-    <div>
-      <p style="font-size: 11px; color: var(--color-text-secondary); margin: 0 0 4px;">|내적| (올바른 방법)</p>
-      <div style="height: 8px; background: var(--color-background-secondary); border-radius: 4px; overflow: hidden;">
-        <div id="rightbar" style="height: 100%; background: #1D9E75; transition: width 0.3s; width: 100%;"></div>
-      </div>
-      <p style="font-size: 11px; font-family: var(--font-mono); color: var(--color-text-secondary); margin: 4px 0 0;" id="rightval">|q·(−q)| = 1.000</p>
-    </div>
-  </div>
-</div>
 
 </div>
 
 <script>
-const s3c = document.getElementById('s3canvas');
+const s3c  = document.getElementById('s3canvas');
 const so3c = document.getElementById('so3canvas');
 const ctx1 = s3c.getContext('2d');
 const ctx2 = so3c.getContext('2d');
@@ -83,89 +144,64 @@ window.addEventListener('mousemove', e => {
   if (!dragging) return;
   camTheta += (e.clientX - lastX) * 0.01;
   camPhi   += (e.clientY - lastY) * 0.01;
-  camPhi = Math.max(-1.4, Math.min(1.4, camPhi));
+  camPhi    = Math.max(-1.4, Math.min(1.4, camPhi));
   lastX = e.clientX; lastY = e.clientY;
-  draw();
 });
 window.addEventListener('mouseup', () => { dragging = false; s3c.style.cursor = 'grab'; });
-
 s3c.addEventListener('touchstart', e => { dragging = true; lastX = e.touches[0].clientX; lastY = e.touches[0].clientY; });
 window.addEventListener('touchmove', e => {
   if (!dragging) return;
   camTheta += (e.touches[0].clientX - lastX) * 0.01;
   camPhi   += (e.touches[0].clientY - lastY) * 0.01;
-  camPhi = Math.max(-1.4, Math.min(1.4, camPhi));
+  camPhi    = Math.max(-1.4, Math.min(1.4, camPhi));
   lastX = e.touches[0].clientX; lastY = e.touches[0].clientY;
-  draw();
 });
 window.addEventListener('touchend', () => { dragging = false; });
 
-function project3D(x, y, z, W, H, scale) {
-  const cx = Math.cos(camTheta), sx = Math.sin(camTheta);
-  const cy = Math.cos(camPhi),   sy = Math.sin(camPhi);
-  const rx =  cx*x + sx*z;
-  const ry = -sy*rx + cy*y;
-  const rz =  cy*rx + sy*y;
-  const rxx = cx*x + sx*z;
-  const ryy = -sy*rxx + cy*y;
-  const rzz = cy*rxx + sy*y;
-  const px = cx*x + sx*z;
-  const pz = -sx*x + cx*z;
-  const py2 = -sy*px + cy*y;
-  const pz2 = cy*px + sy*y;
-  const px2 = cx*x + sx*z;
-  return {
-    sx: W/2 + (cx*x + sx*z) * scale,
-    sy: H/2 - (-sy*(cx*x+sx*z) + cy*y) * scale,
-    depth: cy*(cx*x+sx*z) + sy*y
-  };
-}
-
 function proj(x, y, z, W, H, scale) {
-  const e1x = Math.cos(camTheta), e1z = -Math.sin(camTheta);
-  const e2x = Math.sin(camPhi)*Math.sin(camTheta), e2y = Math.cos(camPhi), e2z = Math.sin(camPhi)*Math.cos(camTheta);
-  const e3x = Math.cos(camPhi)*Math.sin(camTheta), e3y = -Math.sin(camPhi), e3z = Math.cos(camPhi)*Math.cos(camTheta);
+  const e1x =  Math.cos(camTheta), e1z = -Math.sin(camTheta);
+  const e2x =  Math.sin(camPhi) * Math.sin(camTheta);
+  const e2y =  Math.cos(camPhi);
+  const e2z =  Math.sin(camPhi) * Math.cos(camTheta);
+  const e3x =  Math.cos(camPhi) * Math.sin(camTheta);
+  const e3y = -Math.sin(camPhi);
+  const e3z =  Math.cos(camPhi) * Math.cos(camTheta);
   return {
-    sx: W/2 + (e1x*x + 0*y + e1z*z) * scale,
-    sy: H/2 - (e2x*x + e2y*y + e2z*z) * scale,
-    depth: e3x*x + e3y*y + e3z*z
+    sx:    W/2 + (e1x*x + e1z*z) * scale,
+    sy:    H/2 - (e2x*x + e2y*y + e2z*z) * scale,
+    depth:        e3x*x + e3y*y + e3z*z
   };
 }
 
 function getQuaternion() {
-  const angle = parseFloat(document.getElementById('angle').value) * Math.PI / 180;
+  const deg  = parseFloat(document.getElementById('angle').value);
+  const half = deg * Math.PI / 180 / 2;
   let ax = parseFloat(document.getElementById('ax').value);
   let ay = parseFloat(document.getElementById('ay').value);
   let az = parseFloat(document.getElementById('az').value);
   const len = Math.sqrt(ax*ax + ay*ay + az*az) || 1;
   ax /= len; ay /= len; az /= len;
-  const s = Math.sin(angle/2);
+  const s = Math.sin(half);
+  return { w: Math.cos(half), x: ax*s, y: ay*s, z: az*s, ax, ay, az, angleDeg: deg };
+}
+
+function rotateVec(q, vx, vy, vz) {
+  const tx = 2*(q.y*vz - q.z*vy);
+  const ty = 2*(q.z*vx - q.x*vz);
+  const tz = 2*(q.x*vy - q.y*vx);
   return {
-    w: Math.cos(angle/2),
-    x: ax * s, y: ay * s, z: az * s,
-    ax, ay, az, angle
+    x: vx + q.w*tx + q.y*tz - q.z*ty,
+    y: vy + q.w*ty + q.z*tx - q.x*tz,
+    z: vz + q.w*tz + q.x*ty - q.y*tx
   };
 }
 
-function rotateVecByQ(q, vx, vy, vz) {
-  const qx = q.x, qy = q.y, qz = q.z, qw = q.w;
-  const tx = 2*(qy*vz - qz*vy);
-  const ty = 2*(qz*vx - qx*vz);
-  const tz = 2*(qx*vy - qy*vx);
-  return {
-    x: vx + qw*tx + qy*tz - qz*ty,
-    y: vy + qw*ty + qz*tx - qx*tz,
-    z: vz + qw*tz + qx*ty - qy*tx
-  };
-}
-
-function drawSphere(ctx, W, H) {
-  const scale = W * 0.38;
-  ctx.strokeStyle = 'rgba(128,128,128,0.15)';
+function drawSphereGrid(ctx, W, H, scale) {
+  ctx.strokeStyle = 'rgba(100,110,160,0.25)';
   ctx.lineWidth = 0.5;
   for (let lat = -80; lat <= 80; lat += 20) {
-    const r = Math.cos(lat*Math.PI/180);
-    const yy = Math.sin(lat*Math.PI/180);
+    const r  = Math.cos(lat * Math.PI/180);
+    const yy = Math.sin(lat * Math.PI/180);
     ctx.beginPath();
     for (let lng = 0; lng <= 360; lng += 5) {
       const p = proj(r*Math.cos(lng*Math.PI/180), yy, r*Math.sin(lng*Math.PI/180), W, H, scale);
@@ -176,156 +212,150 @@ function drawSphere(ctx, W, H) {
   for (let lng = 0; lng < 360; lng += 30) {
     ctx.beginPath();
     for (let lat = -90; lat <= 90; lat += 5) {
-      const r = Math.cos(lat*Math.PI/180);
-      const yy = Math.sin(lat*Math.PI/180);
-      const p = proj(r*Math.cos(lng*Math.PI/180), yy, r*Math.sin(lng*Math.PI/180), W, H, scale);
+      const r  = Math.cos(lat * Math.PI/180);
+      const yy = Math.sin(lat * Math.PI/180);
+      const p  = proj(r*Math.cos(lng*Math.PI/180), yy, r*Math.sin(lng*Math.PI/180), W, H, scale);
       lat === -90 ? ctx.moveTo(p.sx, p.sy) : ctx.lineTo(p.sx, p.sy);
     }
     ctx.stroke();
   }
 }
 
-function drawS3Canvas() {
+function drawS3() {
   const W = s3c.width, H = s3c.height;
   ctx1.clearRect(0, 0, W, H);
   const scale = W * 0.38;
 
-  drawSphere(ctx1, W, H);
+  drawSphereGrid(ctx1, W, H, scale);
 
   const q = getQuaternion();
-  const pts = [{x:q.x,y:q.y,z:q.z,w:q.w}, {x:-q.x,y:-q.y,z:-q.z,w:-q.w}];
-  const axis3d = proj(q.ax*0.85, q.ay*0.85, q.az*0.85, W, H, scale);
-  const axisN  = proj(-q.ax*0.85, -q.ay*0.85, -q.az*0.85, W, H, scale);
-  const origin = proj(0, 0, 0, W, H, scale);
 
-  ctx1.strokeStyle = 'rgba(136,135,128,0.4)';
+  /* 회전축 점선 */
+  const aHead = proj( q.ax*0.88,  q.ay*0.88,  q.az*0.88, W, H, scale);
+  const aTail = proj(-q.ax*0.88, -q.ay*0.88, -q.az*0.88, W, H, scale);
+  ctx1.strokeStyle = 'rgba(180,190,220,0.35)';
   ctx1.lineWidth = 1;
+  ctx1.setLineDash([5, 5]);
+  ctx1.beginPath();
+  ctx1.moveTo(aTail.sx, aTail.sy);
+  ctx1.lineTo(aHead.sx, aHead.sy);
+  ctx1.stroke();
+  ctx1.setLineDash([]);
+
+  /* q ↔ −q 연결선 */
+  const pq  = proj( q.x,  q.y,  q.z, W, H, scale);
+  const pnq = proj(-q.x, -q.y, -q.z, W, H, scale);
+  ctx1.strokeStyle = 'rgba(126,184,247,0.4)';
+  ctx1.lineWidth = 1.5;
   ctx1.setLineDash([4, 4]);
   ctx1.beginPath();
-  ctx1.moveTo(axisN.sx, axisN.sy);
-  ctx1.lineTo(axis3d.sx, axis3d.sy);
+  ctx1.moveTo(pq.sx, pq.sy);
+  ctx1.lineTo(pnq.sx, pnq.sy);
   ctx1.stroke();
   ctx1.setLineDash([]);
 
-  const surf0 = proj(q.x, q.y, q.z, W, H, scale);
-  const surf1 = proj(-q.x, -q.y, -q.z, W, H, scale);
-
-  ctx1.strokeStyle = 'rgba(55,138,221,0.5)';
-  ctx1.lineWidth = 1.5;
-  ctx1.setLineDash([3, 3]);
-  ctx1.beginPath();
-  ctx1.moveTo(surf0.sx, surf0.sy);
-  ctx1.lineTo(surf1.sx, surf1.sy);
-  ctx1.stroke();
-  ctx1.setLineDash([]);
-
+  /* q 점 */
   ctx1.fillStyle = '#378ADD';
   ctx1.beginPath();
-  ctx1.arc(surf0.sx, surf0.sy, 8, 0, Math.PI*2);
+  ctx1.arc(pq.sx, pq.sy, 9, 0, Math.PI*2);
   ctx1.fill();
-  ctx1.fillStyle = '#fff';
-  ctx1.font = '500 11px var(--font-sans, sans-serif)';
+  ctx1.fillStyle = '#ffffff';
+  ctx1.font = 'bold 11px monospace';
   ctx1.textAlign = 'center';
   ctx1.textBaseline = 'middle';
-  ctx1.fillText('q', surf0.sx, surf0.sy);
+  ctx1.fillText('q', pq.sx, pq.sy);
 
-  ctx1.fillStyle = '#E24B4A';
+  /* −q 점 */
+  ctx1.fillStyle = '#c0392b';
   ctx1.beginPath();
-  ctx1.arc(surf1.sx, surf1.sy, 8, 0, Math.PI*2);
+  ctx1.arc(pnq.sx, pnq.sy, 9, 0, Math.PI*2);
   ctx1.fill();
-  ctx1.fillStyle = '#fff';
-  ctx1.fillText('−q', surf1.sx, surf1.sy);
+  ctx1.fillStyle = '#ffffff';
+  ctx1.fillText('−q', pnq.sx, pnq.sy);
 
-  ctx1.fillStyle = 'rgba(136,135,128,0.8)';
-  ctx1.font = '11px var(--font-sans, sans-serif)';
+  /* 축 라벨 */
+  ctx1.fillStyle = 'rgba(160,170,200,0.7)';
+  ctx1.font = '11px sans-serif';
   ctx1.textAlign = 'left';
-  ctx1.fillText('회전축', axis3d.sx + 6, axis3d.sy);
+  ctx1.textBaseline = 'middle';
+  ctx1.fillText('축', aHead.sx + 6, aHead.sy);
 }
 
-function drawSO3Canvas() {
+function drawSO3() {
   const W = so3c.width, H = so3c.height;
   ctx2.clearRect(0, 0, W, H);
   const scale = W * 0.34;
   const q = getQuaternion();
-
-  const axes = [{x:1,y:0,z:0,color:'#E24B4A',label:'X'},{x:0,y:1,z:0,color:'#1D9E75',label:'Y'},{x:0,y:0,z:1,color:'#378ADD',label:'Z'}];
   const origin = proj(0, 0, 0, W, H, scale);
 
+  const axes = [
+    { vx:1, vy:0, vz:0, color:'#e05555', label:'X' },
+    { vx:0, vy:1, vz:0, color:'#3dbb87', label:'Y' },
+    { vx:0, vy:0, vz:1, color:'#5599e0', label:'Z' }
+  ];
+
   axes.forEach(a => {
-    const r = rotateVecByQ(q, a.x*0.75, a.y*0.75, a.z*0.75);
+    const r  = rotateVec(q, a.vx*0.78, a.vy*0.78, a.vz*0.78);
     const rp = proj(r.x, r.y, r.z, W, H, scale);
+    const dx = rp.sx - origin.sx, dy = rp.sy - origin.sy;
+    const len = Math.sqrt(dx*dx + dy*dy) || 1;
+
     ctx2.strokeStyle = a.color;
     ctx2.lineWidth = 2.5;
     ctx2.beginPath();
     ctx2.moveTo(origin.sx, origin.sy);
     ctx2.lineTo(rp.sx, rp.sy);
     ctx2.stroke();
-    const dx = rp.sx - origin.sx, dy = rp.sy - origin.sy;
-    const len = Math.sqrt(dx*dx+dy*dy)||1;
+
     ctx2.fillStyle = a.color;
     ctx2.beginPath();
     ctx2.moveTo(rp.sx, rp.sy);
-    ctx2.lineTo(rp.sx - dx/len*10 + dy/len*5, rp.sy - dy/len*10 - dx/len*5);
-    ctx2.lineTo(rp.sx - dx/len*10 - dy/len*5, rp.sy - dy/len*10 + dx/len*5);
+    ctx2.lineTo(rp.sx - dx/len*11 + dy/len*5, rp.sy - dy/len*11 - dx/len*5);
+    ctx2.lineTo(rp.sx - dx/len*11 - dy/len*5, rp.sy - dy/len*11 + dx/len*5);
     ctx2.closePath();
     ctx2.fill();
-    ctx2.font = '500 12px var(--font-sans, sans-serif)';
+
+    ctx2.font = 'bold 13px sans-serif';
     ctx2.textAlign = 'center';
     ctx2.textBaseline = 'middle';
-    ctx2.fillText(a.label, rp.sx + dx/len*14, rp.sy + dy/len*14);
+    ctx2.fillText(a.label, rp.sx + dx/len*15, rp.sy + dy/len*15);
   });
 
-  ctx2.fillStyle = 'rgba(136,135,128,0.6)';
+  ctx2.fillStyle = 'rgba(160,170,200,0.6)';
   ctx2.beginPath();
   ctx2.arc(origin.sx, origin.sy, 4, 0, Math.PI*2);
   ctx2.fill();
 
-  ctx2.fillStyle = 'rgba(136,135,128,0.6)';
-  ctx2.font = '11px var(--font-mono, monospace)';
+  ctx2.fillStyle = 'rgba(140,150,190,0.7)';
+  ctx2.font = '12px monospace';
   ctx2.textAlign = 'left';
-  const angDeg = Math.round(q.angle * 180 / Math.PI);
-  ctx2.fillText('θ = ' + angDeg + '°', 10, H - 12);
+  ctx2.textBaseline = 'bottom';
+  ctx2.fillText('θ = ' + Math.round(q.angleDeg) + '°', 10, H - 8);
 }
 
 function updateUI() {
   const q = getQuaternion();
   const fmt = v => (v >= 0 ? '+' : '') + v.toFixed(3);
-  document.getElementById('qval').textContent = `[${fmt(q.w)}, ${fmt(q.x)}i, ${fmt(q.y)}j, ${fmt(q.z)}k]`;
+  document.getElementById('qval').textContent    = `[${fmt(q.w)}, ${fmt(q.x)}i, ${fmt(q.y)}j, ${fmt(q.z)}k]`;
   document.getElementById('negqval').textContent = `[${fmt(-q.w)}, ${fmt(-q.x)}i, ${fmt(-q.y)}j, ${fmt(-q.z)}k]`;
+  document.getElementById('angleval').textContent = Math.round(q.angleDeg);
 
-  const dot = q.w*q.w + q.x*q.x + q.y*q.y + q.z*q.z;
-  const absDot = Math.abs(-dot);
-
-  const euclidDiff = Math.sqrt(4*(q.w*q.w+q.x*q.x+q.y*q.y+q.z*q.z));
-  document.getElementById('wrongbar').style.width = '100%';
-  document.getElementById('wrongval').textContent = '||q − (−q)|| = ' + euclidDiff.toFixed(3) + '  (자세는 동일!)';
-  document.getElementById('rightbar').style.width = '100%';
+  const dot  = q.w*q.w + q.x*q.x + q.y*q.y + q.z*q.z;
+  const eucl = (2 * Math.sqrt(dot)).toFixed(3);
+  document.getElementById('wrongval').textContent = '||q − (−q)|| = ' + eucl + '  (자세는 동일!)';
   document.getElementById('rightval').textContent = '|q · (−q)| = ' + Math.abs(-dot).toFixed(3) + '  → 오차 0°';
-  document.getElementById('angleval').textContent = Math.round(parseFloat(document.getElementById('angle').value));
 }
 
-function draw() {
-  drawS3Canvas();
-  drawSO3Canvas();
-  updateUI();
-}
+function draw() { drawS3(); drawSO3(); updateUI(); }
 
-['ax','ay','az','angle'].forEach(id => {
-  document.getElementById(id).addEventListener('input', draw);
-});
+['ax','ay','az','angle'].forEach(id => document.getElementById(id).addEventListener('input', draw));
 
-s3c.width = 620; s3c.height = 620;
-so3c.width = 620; so3c.height = 620;
-
-draw();
-
-let t = 0;
 function animate() {
-  if (!dragging) {
-    camTheta += 0.003;
-    draw();
-  }
+  if (!dragging) camTheta += 0.003;
+  draw();
   requestAnimationFrame(animate);
 }
 animate();
 </script>
+</body>
+</html>
